@@ -18,6 +18,18 @@ The latest release supports Bedrock 26.40 to 26.60 and Java 26.3, so no custom v
 4. Start the server. The console should list 26.60 among the supported Bedrock versions.
 5. Join from your phone.
 
+6. **Switch on NetherNet (required for 26.60).** If the console shows *"WARNING! NetherNet support is NOT enabled"*,
+   open `plugins/Geyser-Spigot/config.yml`, find `transport: raknet` under `bedrock:` and change it to:
+   ```yaml
+   transport: nethernet
+   ```
+   Keep the spaces at the start of the line exactly as they were. Save, restart, then run `geyser nethernet` in the console.
+   You should see "Built-in signaling started on ..." and the warning should be gone.
+   NetherNet needs the Bedrock port open for **both UDP and TCP**. If phones still can't join, ask your host to open TCP on that port.
+
+**Why step 6:** Bedrock 26.60 removed the old connection method (RakNet) and only uses the new one (NetherNet).
+A Geyser set to `raknet` waits for phones on a connection method they no longer have.
+
 **Trade-off:** the new Geyser no longer supports Bedrock 26.30 to 26.34. Bedrock updates itself automatically, so this rarely matters.
 
 ## If this happens again
