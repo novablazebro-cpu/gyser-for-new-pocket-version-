@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard.core;
 
 import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.math.ClickWindow;
+import io.github.novablaze.novaguard.math.Momentum;
 import io.github.novablaze.novaguard.math.PositionHistory;
 import io.github.novablaze.novaguard.math.SpeedBudget;
 import io.github.novablaze.novaguard.math.TargetWindow;
@@ -41,6 +42,10 @@ public final class PlayerData {
     public long selfTeleportUntilMs;
     public long manualExemptUntilMs;
     public final SpeedBudget speedBudget = new SpeedBudget();
+    /** Leftover launch momentum after a grace period ended mid-air. */
+    public final Momentum momentum = new Momentum();
+    /** The previous move was skipped (grace, exemption): the next checked move may start momentum tracking. */
+    public boolean afterSkip;
     public long lastIceMs;
     public boolean airborne;
     public double groundY;

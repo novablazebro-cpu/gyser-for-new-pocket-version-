@@ -35,3 +35,4 @@
 | Welford's method | A way to keep mean and spread of a stream of numbers without storing them all. | `RunningStats.add()` |
 | Persistence | Saving state to disk so it survives a restart. | `monitors.yml` written by `MonitorManager` |
 | Tick | One step of the server's game loop (20 per second). Packets are handled once per tick. | Why click timing is measured per second, not per millisecond |
+| Momentum tracking | After a launch, allowing movement only while it slows down the way real physics demands. | `math/Momentum.java` (TNT cannons, slime launchers) |

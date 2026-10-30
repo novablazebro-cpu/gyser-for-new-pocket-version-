@@ -6,7 +6,9 @@ import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.AttackRange;
 import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.entity.EntityLungeEvent;
+import java.util.List;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -194,12 +196,12 @@ public final class GraceListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        graceNear(event.getBlock());
+        graceNear(event.getBlock(), event.getBlocks());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        graceNear(event.getBlock());
+        graceNear(event.getBlock(), event.getBlocks());
     }
 
     /**
@@ -217,11 +219,25 @@ public final class GraceListener implements Listener {
         data.previousItemUntilMs = System.currentTimeMillis() + 250;
     }
 
-    private void graceNear(Block piston) {
+    /**
+     * Pistons move players directly (no velocity event). A piston moving slime or honey blocks is a launcher,
+     * so players nearby get a longer grace; momentum tracking covers whatever flight is left after it.
+     */
+    private void graceNear(Block piston, List<Block> moved) {
+        boolean launcher = false;
+        for (Block block : moved) {
+            Material type = block.getType();
+            if (type == Material.SLIME_BLOCK || type == Material.HONEY_BLOCK) {
+                launcher = true;
+                break;
+            }
+        }
+        double radius = launcher ? 5.0 : 3.5;
+        long duration = launcher ? 3000 : 1500;
         Location center = piston.getLocation().add(0.5, 0.5, 0.5);
-        for (Entity entity : piston.getWorld().getNearbyEntities(center, 3.5, 3.5, 3.5)) {
+        for (Entity entity : piston.getWorld().getNearbyEntities(center, radius, radius, radius)) {
             if (entity instanceof Player player) {
-                grace(player, 1500);
+                grace(player, duration + player.getPing());
             }
         }
     }

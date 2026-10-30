@@ -54,6 +54,8 @@ public final class MovementListener implements Listener, Runnable {
         if (plugin.exemptions().skipMovement(player, data, now)) {
             data.resetMovement(to, now);
             data.speedBudget.fill(now);
+            data.momentum.stop();
+            data.afterSkip = true;
             return;
         }
         // Probe only for checked players: exempt ones (Bedrock, creative, flying...) cost nothing extra.
@@ -61,12 +63,21 @@ public final class MovementListener implements Listener, Runnable {
         if (env.onIce()) {
             data.lastIceMs = now;
         }
+        double dy = to.getY() - from.getY();
+        double horizontal = Math.hypot(to.getX() - from.getX(), to.getZ() - from.getZ());
+        if (env.grounded() || env.supported()) {
+            data.momentum.stop();
+        } else if (data.afterSkip) {
+            // Grace ended while still in the air (TNT cannon, slime launcher): track the leftover momentum.
+            data.momentum.start(dy, horizontal);
+        }
+        data.afterSkip = false;
 
         boolean failed = false;
         if (settings.enabled(CheckType.SPEED)) {
-            failed = checkSpeed(player, data, settings, from, to, now);
+            failed = checkSpeed(player, data, settings, horizontal, now);
         }
-        failed |= checkFly(player, data, settings, to, env, now);
+        failed |= checkFly(player, data, settings, to, dy, env, now);
         checkNoFall(player, data, settings, to.getY() - from.getY(), env);
 
         if (failed) {
@@ -91,19 +102,30 @@ public final class MovementListener implements Listener, Runnable {
         data.lastMoveMs = now;
     }
 
-    private boolean checkSpeed(Player player, PlayerData data, Settings settings, Location from, Location to,
-                               long now) {
+    private boolean checkSpeed(Player player, PlayerData data, Settings settings, double distance, long now) {
         if (player.hasPotionEffect(PotionEffectType.DOLPHINS_GRACE)) {
             data.speedBudget.fill(now);
             return false;
         }
-        double distance = Math.hypot(to.getX() - from.getX(), to.getZ() - from.getZ());
         double attribute = Exemptions.attribute(player, Attribute.MOVEMENT_SPEED, 0.1);
         boolean ice = now - data.lastIceMs < 2000;
         double rate = MovementMath.allowedRate(attribute, player.isSprinting(), player.getWalkSpeed(), ice,
             settings.speedMultiplier, settings.speedIceMultiplier);
         if (usingKineticWeapon(player)) {
             rate += KINETIC_EXTRA_RATE;
+        }
+        if (data.momentum.active()) {
+            double normalStep = rate / 20.0;
+            if (data.momentum.horizontal(distance, normalStep)) {
+                plugin.violations().flag(player, data, CheckType.SPEED, 1.0,
+                    String.format(Locale.ROOT, "kept %.2f blocks/tick in the air without slowing down", distance));
+                return true;
+            }
+            if (distance > normalStep) {
+                // Fast but slowing down like real launch momentum: legit, and not charged to the budget.
+                data.speedBudget.fill(now);
+                return false;
+            }
         }
         // The bucket holds ~1 s + 1.5x ping of movement, so stuck packets that arrive together are absorbed.
         double capacity = MovementMath.capacity(rate, player.getPing());
@@ -116,7 +138,7 @@ public final class MovementListener implements Listener, Runnable {
         return false;
     }
 
-    private boolean checkFly(Player player, PlayerData data, Settings settings, Location to,
+    private boolean checkFly(Player player, PlayerData data, Settings settings, Location to, double dy,
                              Environment.Probe env, long now) {
         if (env.grounded() || env.supported()) {
             if (data.airborne && env.bouncy() && data.fallDistance > 0.5) {
@@ -140,6 +162,20 @@ public final class MovementListener implements Listener, Runnable {
         }
         boolean levitating = player.hasPotionEffect(PotionEffectType.LEVITATION);
         boolean slowFalling = player.hasPotionEffect(PotionEffectType.SLOW_FALLING);
+
+        if (data.momentum.risingPhase()) {
+            double gravity = Exemptions.attribute(player, Attribute.GRAVITY, 0.08);
+            if (data.momentum.vertical(dy, gravity) && !Environment.platformNearby(player)) {
+                plugin.violations().flag(player, data, CheckType.FLY, 1.0,
+                    String.format(Locale.ROOT, "kept rising %.2f blocks/tick without slowing down", dy));
+                return true;
+            }
+            // Still coasting up (or just reached the top): measure jumps and hovering from here.
+            data.groundY = to.getY();
+            data.hoverCheckpointMs = now;
+            data.hoverCheckpointY = to.getY();
+            return false;
+        }
 
         double rise = to.getY() - data.groundY;
         double allowed = maxJumpHeight(player) + settings.flyJumpMargin

@@ -67,6 +67,13 @@ The report is evidence, not proof: spectate the player before acting.
 
 All flags are written to `plugins/NovaGuard/violations.log`.
 
+## Set `allow-flight=true` in server.properties
+
+The famous "Flying is not enabled on this server" kick (after TNT, pistons, slime launchers, lag...) is
+**vanilla Minecraft's own** crude check, active when `allow-flight=false`. NovaGuard checks flying itself,
+with lag compensation and launch-momentum tracking, so set `allow-flight=true`. This does not let anyone fly;
+it only turns off vanilla's kick.
+
 ## Recommended Paper settings against dupes
 
 Paper already blocks most dupes. Check these are still at their safe defaults in `config/paper-global.yml`:
