@@ -38,16 +38,17 @@ jobs:
           name: NovaGuard
           path: build/libs/NovaGuard.jar
 
-      # Only deliberate releases: a version tag (novaguard-v1.2.3) or the main branch.
-      # Work-in-progress branches are built and tested, but never become the "latest" download.
+      # Version tags (novaguard-v1.2.3) and main publish a full release that becomes the "latest" download.
+      # Other branch pushes publish a pre-release: downloadable for testing, but never marked "latest".
       - name: Publish GitHub Release
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/novaguard-v') || github.ref == 'refs/heads/main')
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('novaguard-build-{0}', github.run_number) }}
           name: NovaGuard ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build {0}', github.run_number) }}
+          prerelease: ${{ !(startsWith(github.ref, 'refs/tags/novaguard-v') || github.ref == 'refs/heads/main') }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/novaguard-v') || github.ref == 'refs/heads/main' }}
           target_commitish: ${{ github.sha }}
-          make_latest: true
           files: build/libs/NovaGuard.jar
           body: |
             NovaGuard for Paper 26.3, built from commit ${{ github.sha }}.
