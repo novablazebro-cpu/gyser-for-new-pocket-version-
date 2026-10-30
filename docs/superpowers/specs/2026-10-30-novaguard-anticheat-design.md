@@ -98,3 +98,18 @@ EssentialsX `/fly` and `/speed`, creative/spectator, GSit chairs.
 
 Packet-level prediction, subtle cheats (small reach, smooth aim, small timer), X-ray (use Paper's
 built-in anti-xray), bans.
+
+## Addendum 2026-10-30: player monitoring (approved in chat)
+
+- `/monitor <player> [cracked|bedrock]` (console or `novaguard.admin`), plus `stop`, `report`, `list`.
+  The tag is optional; the detected type wins and a mismatch is reported.
+- Duration: 72 real hours (`monitor.duration-hours`), persisted in `monitors.yml` across restarts.
+- Recorded: lag-compensated reach per hit and the share beyond the strict limit (no tolerance), aim angle per hit
+  and share above 45 degrees, attacks per second for seconds with 5+ attacks (mean and variation; exact click
+  intervals are not measurable because Paper handles packets once per tick), all flags and near misses, ping,
+  playtime, sessions, client brand, dupe alerts.
+- Bedrock players run in shadow mode: checks execute and record, but never set back, cancel, damage, alert or kick.
+- Verdict (`MonitorVerdict`): points per kind of evidence; Bedrock movement counts half; average ping above
+  250 ms subtracts 2; under 30 minutes of playtime caps the verdict at "suspicious". Suspicious from 3, likely from 6.
+- Report: `plugins/NovaGuard/reports/<name>-<date>.txt`, announced to console and staff.
+- "Likely cheating" kicks a Java player once (on next join if offline), never Bedrock, never a ban (owner's choice).

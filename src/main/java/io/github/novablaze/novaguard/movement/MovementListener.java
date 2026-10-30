@@ -196,6 +196,11 @@ public final class MovementListener implements Listener, Runnable {
             if (damage >= 1.0) {
                 plugin.violations().flag(player, data, CheckType.NOFALL, 1.0,
                     String.format(Locale.ROOT, "fell %.1f blocks while claiming ground", data.fallDistance));
+                if (data.shadow) {
+                    data.fallDistance = 0;
+                    data.groundSpoofs = 0;
+                    return;
+                }
                 // Damage on the next tick, outside the move event. Armor and Feather Falling still apply.
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (player.isOnline() && !player.isDead()) {
@@ -209,6 +214,12 @@ public final class MovementListener implements Listener, Runnable {
     }
 
     private void setback(PlayerMoveEvent event, Player player, PlayerData data, long now) {
+        if (data.shadow) {
+            // Shadow mode: no rubberband, but restart tracking so one cheat is counted once, not every move.
+            data.resetMovement(event.getTo(), now);
+            data.speedBudget.reset(now, Double.MAX_VALUE);
+            return;
+        }
         Location from = event.getFrom();
         Location target = data.lastGood != null && data.lastGood.getWorld() == from.getWorld()
             && data.lastGood.distanceSquared(from) < 64 * 64 ? data.lastGood.clone() : from.clone();
@@ -245,6 +256,10 @@ public final class MovementListener implements Listener, Runnable {
                 continue;
             }
             plugin.violations().flag(player, data, CheckType.FLY, 0.5, "hovering while standing still");
+            if (data.shadow) {
+                data.resetMovement(location, now);
+                continue;
+            }
             Location target = data.lastGood != null && data.lastGood.getWorld() == location.getWorld()
                 ? data.lastGood.clone() : location;
             target.setYaw(location.getYaw());

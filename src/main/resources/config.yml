@@ -89,6 +89,13 @@ checks:
     # Seconds in a row above max-cps before it is flagged.
     seconds: 3
 
+monitor:
+  # /monitor <player> watches a player this long, then writes a report to plugins/NovaGuard/reports/.
+  duration-hours: 72
+  # Kick a Java player once when the final report says "likely cheating" (never Bedrock, never a ban).
+  kick-on-likely: true
+  kick-message: "<red>NovaGuard: a 3-day review found likely cheating. Staff will look at the report.</red>"
+
 anti-dupe:
   enabled: true
   # Trim items stacked above their maximum (e.g. 127 totems) and alert.

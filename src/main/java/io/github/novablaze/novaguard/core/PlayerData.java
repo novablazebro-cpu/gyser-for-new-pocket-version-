@@ -16,6 +16,13 @@ public final class PlayerData {
     public final boolean bedrock;
     public final long joinMs;
     public boolean alertsEnabled = true;
+    /** Watched by /monitor: extra statistics are recorded. */
+    public boolean monitored;
+    /**
+     * Shadow mode: a monitored Bedrock player. Checks run and record what they see,
+     * but never set back, cancel, damage, alert or kick.
+     */
+    public boolean shadow;
 
     public final ViolationTracker violations = new ViolationTracker();
     public final long[] lastAlertMs = new long[CheckType.values().length];

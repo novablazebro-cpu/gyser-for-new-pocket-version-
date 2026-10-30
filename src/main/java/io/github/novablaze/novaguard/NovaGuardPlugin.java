@@ -8,6 +8,8 @@ import io.github.novablaze.novaguard.core.PlayerDataManager;
 import io.github.novablaze.novaguard.core.ViolationManager;
 import io.github.novablaze.novaguard.dupe.DupeListener;
 import io.github.novablaze.novaguard.dupe.ItemFingerprints;
+import io.github.novablaze.novaguard.monitor.MonitorCommand;
+import io.github.novablaze.novaguard.monitor.MonitorManager;
 import io.github.novablaze.novaguard.movement.Exemptions;
 import io.github.novablaze.novaguard.movement.GraceListener;
 import io.github.novablaze.novaguard.movement.MovementListener;
@@ -27,6 +29,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private ViolationManager violations;
     private Exemptions exemptions;
     private ItemFingerprints fingerprints;
+    private MonitorManager monitor;
     private DupeListener dupeListener;
     private BukkitTask fingerprintTask;
 
@@ -39,6 +42,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         violations = new ViolationManager(this);
         exemptions = new Exemptions(this);
         fingerprints = new ItemFingerprints(this);
+        monitor = new MonitorManager(this);
 
         MovementListener movement = new MovementListener(this);
         dupeListener = new DupeListener(this);
@@ -51,20 +55,28 @@ public final class NovaGuardPlugin extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, movement, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, this::decayViolations, 20L, 20L);
+        Bukkit.getScheduler().runTaskTimer(this, monitor, 1200L, 1200L);
         scheduleFingerprintScans();
 
         // Players already online (after /reload or a plugin manager reload).
         long now = System.currentTimeMillis();
         for (Player player : Bukkit.getOnlinePlayers()) {
-            players.get(player).grace(now, 5000);
+            PlayerData data = players.get(player);
+            data.grace(now, 5000);
+            monitor.onJoin(player, data);
         }
 
         registerCommand("novaguard", "NovaGuard anti-cheat", List.of("ng"), new NovaGuardCommand(this));
+        registerCommand("monitor", "Watch a player for a few days and write a cheat report", List.of("ngmonitor"),
+            new MonitorCommand(this));
         getLogger().info("NovaGuard enabled: lag-safe checks and anti-dupe are active.");
     }
 
     @Override
     public void onDisable() {
+        if (monitor != null) {
+            monitor.shutdown();
+        }
         if (violations != null) {
             violations.shutdown();
         }
@@ -110,6 +122,10 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public Exemptions exemptions() {
         return exemptions;
+    }
+
+    public MonitorManager monitor() {
+        return monitor;
     }
 
     public ItemFingerprints fingerprints() {

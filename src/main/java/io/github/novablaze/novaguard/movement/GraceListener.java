@@ -56,10 +56,12 @@ public final class GraceListener implements Listener {
         long now = System.currentTimeMillis();
         data.resetMovement(player.getLocation(), now);
         data.grace(now, 5000);
+        plugin.monitor().onJoin(player, data);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
+        plugin.monitor().onQuit(event.getPlayer());
         plugin.players().remove(event.getPlayer().getUniqueId());
         plugin.fingerprints().forget(event.getPlayer().getUniqueId());
     }

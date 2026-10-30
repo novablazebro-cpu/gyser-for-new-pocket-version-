@@ -57,6 +57,10 @@ public final class Settings {
     public final int maxCps;
     public final int cpsSeconds;
 
+    public final long monitorDurationHours;
+    public final boolean monitorKickOnLikely;
+    public final String monitorKickMessage;
+
     public final boolean dupeEnabled;
     public final boolean fixOverstacked;
     public final boolean entityContainerGuard;
@@ -107,6 +111,11 @@ public final class Settings {
         multiWindowMs = Math.max(50, c.getLong("checks.multi-target.window-ms", 250));
         maxCps = Math.max(5, c.getInt("checks.autoclicker.max-cps", 22));
         cpsSeconds = Math.max(1, c.getInt("checks.autoclicker.seconds", 3));
+
+        monitorDurationHours = Math.max(1, c.getLong("monitor.duration-hours", 72));
+        monitorKickOnLikely = c.getBoolean("monitor.kick-on-likely", true);
+        monitorKickMessage = c.getString("monitor.kick-message",
+            "<red>NovaGuard: a 3-day review found likely cheating.</red>");
 
         dupeEnabled = c.getBoolean("anti-dupe.enabled", true);
         fixOverstacked = c.getBoolean("anti-dupe.fix-overstacked", true);

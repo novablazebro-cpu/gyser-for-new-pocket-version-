@@ -30,3 +30,8 @@
 | Release | A published, downloadable version of the program. | GitHub Releases page of this repo |
 | Branch | A separate line of work in git, so experiments don't disturb the main version. | `claude/novaguard-anticheat` |
 | Commit | A saved snapshot of the project with a note saying what changed, like a labelled game save. | `git log` |
+| Shadow mode | Running checks that only record what they see, without acting on it. | Monitored Bedrock players (`PlayerData.shadow`) |
+| Standard deviation | How spread out numbers are. Humans click irregularly (high), simple autoclickers very regularly (low). | `math/RunningStats.java`, monitoring reports |
+| Welford's method | A way to keep mean and spread of a stream of numbers without storing them all. | `RunningStats.add()` |
+| Persistence | Saving state to disk so it survives a restart. | `monitors.yml` written by `MonitorManager` |
+| Tick | One step of the server's game loop (20 per second). Packets are handled once per tick. | Why click timing is measured per second, not per millisecond |

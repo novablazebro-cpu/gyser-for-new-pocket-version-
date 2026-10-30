@@ -41,6 +41,28 @@ servers that also run Geyser/Floodgate.
 | `/novaguard exempt <player> <seconds>` | `novaguard.admin` | Skip all checks for a player for a while |
 | `/novaguard reload` | `novaguard.admin` | Reload `config.yml` |
 
+### Monitoring a suspect (`/monitor`)
+
+Type these in the server console (e.g. the Pterodactyl panel) or in game with `novaguard.admin`:
+
+| Command | What it does |
+|---|---|
+| `monitor <player> [cracked\|bedrock]` | Watch the player for 3 days. The tag is optional: NovaGuard detects Java/Bedrock itself and warns if your tag disagrees. Bedrock names usually start with `.` (Floodgate prefix). |
+| `monitor report <player>` | Write a report now (the watch keeps running) |
+| `monitor stop <player>` | Stop watching, no report |
+| `monitor list` | Who is watched and when each report is due |
+
+While watched, NovaGuard records every hit's lag-compensated reach and aim angle, attacks per second and how
+regular they are, every flag and near miss, ping, playtime and client brand. After 3 days (counted even while
+they are offline or the server restarts) a report is written to `plugins/NovaGuard/reports/` and announced to
+the console and online staff, with a verdict: **no evidence / suspicious / likely cheating**.
+
+- A **Java** player with a "likely cheating" verdict is kicked once (on their next join if offline). Never banned.
+- **Bedrock** players are watched in *shadow mode*: checks record what they would have flagged but never act,
+  and the report only recommends. Settings: `monitor:` in `config.yml`.
+
+The report is evidence, not proof: spectate the player before acting.
+
 `novaguard.bypass` skips every anti-cheat check (not given to anyone by default, not even ops).
 
 All flags are written to `plugins/NovaGuard/violations.log`.

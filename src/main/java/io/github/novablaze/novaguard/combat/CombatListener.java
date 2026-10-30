@@ -43,13 +43,25 @@ public final class CombatListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onAttack(PrePlayerAttackEntityEvent event) {
         Player player = event.getPlayer();
-        Entity target = event.getAttacked();
         PlayerData data = plugin.players().get(player);
+        check(event, player, data);
+        if (data.shadow) {
+            // Shadow mode (monitored Bedrock player): everything is recorded, nothing is blocked.
+            // ignoreCancelled = true means the event was not cancelled before us, so undoing is safe.
+            event.setCancelled(false);
+        }
+    }
+
+    private void check(PrePlayerAttackEntityEvent event, Player player, PlayerData data) {
+        Entity target = event.getAttacked();
         long now = System.currentTimeMillis();
         if (plugin.exemptions().skipAll(player, data, now) || player.isRiptiding() || serverComputedHit(player)) {
             return;
         }
         Settings settings = plugin.settings();
+        if (data.monitored) {
+            plugin.monitor().recordAttack(player.getUniqueId(), now);
+        }
 
         if (settings.enabled(CheckType.AUTOCLICKER) && tooManyClicks(player, data, settings, now)) {
             event.setCancelled(true);
@@ -82,12 +94,18 @@ public final class CombatListener implements Listener {
         long window = lagWindow(ping);
         Box seen = targetBox(target, targetData, eye, now, window);
         double distance = Geometry.distanceToBox(eye.getX(), eye.getY(), eye.getZ(), seen);
+        double strictLimit = reachLimit(player, data, 0.0, now);
+        double angle = angleToTarget(eye, seen, distance);
+        if (data.monitored) {
+            plugin.monitor().recordHit(player.getUniqueId(), distance, strictLimit, angle);
+        }
 
-        if (settings.enabled(CheckType.REACH) && failsReach(player, data, settings, distance, now)) {
+        if (settings.enabled(CheckType.REACH)
+            && failsReach(player, data, distance, strictLimit + settings.reachTolerance)) {
             event.setCancelled(true);
             return;
         }
-        if (settings.enabled(CheckType.AIM) && failsAim(player, data, settings, eye, seen, distance)) {
+        if (settings.enabled(CheckType.AIM) && failsAim(player, data, settings, angle)) {
             event.setCancelled(true);
             return;
         }
@@ -154,7 +172,8 @@ public final class CombatListener implements Listener {
         return toBox(target.getBoundingBox()).expand(grow);
     }
 
-    private boolean failsReach(Player player, PlayerData data, Settings settings, double distance, long now) {
+    /** Real reach of the held (or just switched-away) item + hitbox margin + {@code tolerance}. */
+    private static double reachLimit(Player player, PlayerData data, double tolerance, long now) {
         double interaction = Exemptions.attribute(player, Attribute.ENTITY_INTERACTION_RANGE, 3.0);
         ItemStack hand = player.getInventory().getItemInMainHand();
         AttackRange range = hand.isEmpty() ? null : hand.getData(DataComponentTypes.ATTACK_RANGE);
@@ -164,7 +183,10 @@ public final class CombatListener implements Listener {
             itemReach = Math.max(itemReach, data.previousItemReach);
             itemMargin = Math.max(itemMargin, data.previousItemMargin);
         }
-        double limit = ReachMath.limit(interaction, itemReach, itemMargin, settings.reachTolerance);
+        return ReachMath.limit(interaction, itemReach, itemMargin, tolerance);
+    }
+
+    private boolean failsReach(Player player, PlayerData data, double distance, double limit) {
         if (distance <= limit) {
             data.reachBuffer = Math.max(0, data.reachBuffer - 0.25);
             return false;
@@ -173,24 +195,32 @@ public final class CombatListener implements Listener {
         if (data.reachBuffer >= 2) {
             plugin.violations().flag(player, data, CheckType.REACH, 1.0,
                 String.format(Locale.ROOT, "%.2f blocks, limit %.2f", distance, limit));
+        } else if (data.monitored) {
+            plugin.monitor().recordNearMiss(player.getUniqueId(), CheckType.REACH);
         }
         return true;
     }
 
-    private boolean failsAim(Player player, PlayerData data, Settings settings, Location eye, Box seen,
-                             double distance) {
+    /** Degrees between the look direction and the target, or NaN when the target is too close to measure. */
+    private static double angleToTarget(Location eye, Box seen, double distance) {
         if (distance < 1.0) {
-            return false; // Too close: any small move changes the angle a lot.
+            return Double.NaN; // Too close: any small move changes the angle a lot.
         }
         double[] point = Geometry.closestPoint(eye.getX(), eye.getY(), eye.getZ(), seen.expand(0.1));
         Vector look = eye.getDirection();
-        double angle = Geometry.angleDegrees(look.getX(), look.getY(), look.getZ(),
+        return Geometry.angleDegrees(look.getX(), look.getY(), look.getZ(),
             point[0] - eye.getX(), point[1] - eye.getY(), point[2] - eye.getZ());
-        if (angle <= settings.aimMaxAngle) {
+    }
+
+    private boolean failsAim(Player player, PlayerData data, Settings settings, double angle) {
+        if (Double.isNaN(angle) || angle <= settings.aimMaxAngle) {
             data.aimBuffer = 0;
             return false;
         }
         if (++data.aimBuffer < settings.aimBuffer) {
+            if (data.monitored) {
+                plugin.monitor().recordNearMiss(player.getUniqueId(), CheckType.AIM);
+            }
             return false;
         }
         plugin.violations().flag(player, data, CheckType.AIM, 1.0,
@@ -209,6 +239,9 @@ public final class CombatListener implements Listener {
             return false;
         }
         if (++data.wallBuffer < settings.wallBuffer) {
+            if (data.monitored) {
+                plugin.monitor().recordNearMiss(player.getUniqueId(), CheckType.WALL_HIT);
+            }
             return false;
         }
         plugin.violations().flag(player, data, CheckType.WALL_HIT, 1.0, "hit through a solid block");

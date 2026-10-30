@@ -49,6 +49,14 @@ public final class ViolationManager {
      */
     public void flag(Player player, PlayerData data, CheckType type, double amount, String detail) {
         Settings settings = plugin.settings();
+        if (data.monitored) {
+            plugin.monitor().recordFlag(player.getUniqueId(), type);
+        }
+        if (data.shadow) {
+            // Monitored Bedrock player: written to the log only. No VL, no alert, no kick.
+            log("[shadow] " + player.getName() + " would have failed " + type.displayName() + " (" + detail + ")");
+            return;
+        }
         double vl = data.violations.add(type, amount);
         long now = System.currentTimeMillis();
         int ping = player.getPing();
@@ -92,6 +100,7 @@ public final class ViolationManager {
 
     /** Anti-dupe alert: not tied to a check VL, never kicks. */
     public void dupeAlert(String playerName, String detail) {
+        plugin.monitor().recordDupe(playerName);
         String line = playerName + " dupe alert: " + detail;
         log(line);
         alert(playerName, CheckType.DUPE, detail, -1, -1);

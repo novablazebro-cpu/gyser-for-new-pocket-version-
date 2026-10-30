@@ -38,9 +38,9 @@ public final class Exemptions {
         }
     }
 
-    /** Common skips: Bedrock, bypass permission, creative/spectator, dead, manual /novaguard exempt. */
+    /** Common skips: Bedrock (unless monitored in shadow mode), bypass permission, creative/spectator, dead, manual /novaguard exempt. */
     public boolean skipAll(Player player, PlayerData data, long now) {
-        if (data.bedrock || now < data.manualExemptUntilMs || player.isDead()) {
+        if ((data.bedrock && !data.shadow) || now < data.manualExemptUntilMs || player.isDead()) {
             return true;
         }
         GameMode mode = player.getGameMode();
