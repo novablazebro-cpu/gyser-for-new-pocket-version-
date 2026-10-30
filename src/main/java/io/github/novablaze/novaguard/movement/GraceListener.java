@@ -1,5 +1,6 @@
 package io.github.novablaze.novaguard.movement;
 
+import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.papermc.paper.datacomponent.DataComponentTypes;
@@ -8,6 +9,7 @@ import io.papermc.paper.event.entity.EntityKnockbackEvent;
 import io.papermc.paper.event.entity.EntityLungeEvent;
 import java.util.List;
 import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
@@ -58,6 +60,7 @@ public final class GraceListener implements Listener {
         long now = System.currentTimeMillis();
         data.resetMovement(player.getLocation(), now);
         data.grace(now, 5000);
+        plugin.alts().onJoin(player);
         plugin.monitor().onJoin(player, data);
     }
 
@@ -106,7 +109,38 @@ public final class GraceListener implements Listener {
     public void onKnockback(EntityKnockbackEvent event) {
         if (event.getEntity() instanceof Player player) {
             graceForVelocity(player, event.getKnockback());
+            startKnockbackCheck(player, event);
         }
+    }
+
+    /** Anti-knockback (Velocity): only for melee hits, and only where knockback can actually move the player. */
+    private void startKnockbackCheck(Player player, EntityKnockbackEvent event) {
+        EntityKnockbackEvent.Cause cause = event.getCause();
+        if (!plugin.settings().enabled(CheckType.VELOCITY)
+            || cause != EntityKnockbackEvent.Cause.ENTITY_ATTACK && cause != EntityKnockbackEvent.Cause.SWEEP_ATTACK) {
+            return;
+        }
+        PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
+        long now = System.currentTimeMillis();
+        if (data == null || plugin.exemptions().skipAll(player, data, now) || player.isInsideVehicle()
+            || player.isGliding() || player.isFlying()
+            || Exemptions.attribute(player, Attribute.KNOCKBACK_RESISTANCE, 0) >= 0.5) {
+            return;
+        }
+        Vector push = event.getKnockback();
+        double horizontal = Math.hypot(push.getX(), push.getZ());
+        if (horizontal < 0.15) {
+            return;
+        }
+        // A wall right behind the player stops knockback for real: no judgement possible.
+        org.bukkit.util.BoundingBox behind = player.getBoundingBox()
+            .shift(push.getX() / horizontal * 0.5, 0.05, push.getZ() / horizontal * 0.5);
+        if (player.getWorld().hasCollisionsIn(behind) || Environment.probe(player, player.getLocation()).supported()) {
+            return;
+        }
+        long window = Math.min(1500, 400 + (long) (player.getPing() * 1.5));
+        data.velocityStartMs = now;
+        data.velocity.start(now, push.getX(), push.getZ(), horizontal, window);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

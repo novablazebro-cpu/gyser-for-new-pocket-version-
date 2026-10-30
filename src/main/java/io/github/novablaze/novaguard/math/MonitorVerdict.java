@@ -37,7 +37,7 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
     public record Evidence(double playtimeMinutes, double averagePing, boolean bedrock,
                            long hits, long strictOverHits, long aimHits, long aimOver45,
                            long cpsSeconds, double cpsMean, double cpsStdDev,
-                           int[] flags, int dupeAlerts) {
+                           int[] flags, int dupeAlerts, long rotationSamples, double rotationFit) {
 
         public int flags(CheckType type) {
             return flags[type.ordinal()];
@@ -61,6 +61,8 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
             private double cpsStdDev;
             private final int[] flags = new int[CheckType.values().length];
             private int dupeAlerts;
+            private long rotationSamples;
+            private double rotationFit = 1.0;
 
             public Builder playtimeMinutes(double v) { playtimeMinutes = v; return this; }
             public Builder averagePing(double v) { averagePing = v; return this; }
@@ -74,10 +76,12 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
             public Builder cpsStdDev(double v) { cpsStdDev = v; return this; }
             public Builder flags(CheckType type, int count) { flags[type.ordinal()] = count; return this; }
             public Builder dupeAlerts(int v) { dupeAlerts = v; return this; }
+            public Builder rotationSamples(long v) { rotationSamples = v; return this; }
+            public Builder rotationFit(double v) { rotationFit = v; return this; }
 
             public Evidence build() {
                 return new Evidence(playtimeMinutes, averagePing, bedrock, hits, strictOverHits, aimHits, aimOver45,
-                    cpsSeconds, cpsMean, cpsStdDev, flags.clone(), dupeAlerts);
+                    cpsSeconds, cpsMean, cpsStdDev, flags.clone(), dupeAlerts, rotationSamples, rotationFit);
             }
         }
     }
@@ -126,6 +130,21 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
             reasons.add(String.format(Locale.ROOT,
                 "robot-like clicking: %.1f attacks/s with almost no variation (%.2f) over %d seconds",
                 e.cpsMean(), e.cpsStdDev(), e.cpsSeconds()));
+        }
+        if (!e.bedrock() && e.rotationSamples() >= 200 && e.rotationFit() < 0.5) {
+            combat += 2;
+            reasons.add(String.format(Locale.ROOT,
+                "only %.0f%% of camera turns match any mouse sensitivity (aim assist / killaura rotations)",
+                e.rotationFit() * 100));
+            caveats.add("Rotation evidence is weaker if the player uses the cinematic camera, a zoom mod or a trackpad.");
+        }
+        if (e.flags(CheckType.VELOCITY) >= 3) {
+            combat += 3;
+            reasons.add(e.flags(CheckType.VELOCITY) + " Velocity flags (took no knockback from hits)");
+        }
+        if (e.flags(CheckType.BLOCK_REACH) >= 3) {
+            combat += 2;
+            reasons.add(e.flags(CheckType.BLOCK_REACH) + " BlockReach flags (placing/breaking too far away)");
         }
         if (e.flags(CheckType.AUTOCLICKER) >= 2) {
             combat += 2;

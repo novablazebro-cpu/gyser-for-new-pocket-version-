@@ -27,6 +27,18 @@ public final class PlayerData {
 
     public final ViolationTracker violations = new ViolationTracker();
     public final long[] lastAlertMs = new long[CheckType.values().length];
+    public final long[] lastContextMs = new long[CheckType.values().length];
+    /** Recent moves, written next to flags (log-context). */
+    public final MoveTrace trace = new MoveTrace();
+    /** Lenient anti-knockback tracking. */
+    public final io.github.novablaze.novaguard.math.VelocityTracker velocity =
+        new io.github.novablaze.novaguard.math.VelocityTracker();
+    public long velocityStartMs;
+    /** Soft mitigation: the next damage to this entity id from this player is reduced. */
+    public int softHitTarget = -1;
+    /** Block this player last started digging (BlockReach only judges blocks broken by hand). */
+    public Location lastDugBlock;
+    public long softHitUntilMs;
 
     /** Hitboxes of the last ~2 seconds, used when this player is the target of a hit. */
     public final PositionHistory history = new PositionHistory(40);

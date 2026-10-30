@@ -63,6 +63,37 @@ the console and online staff, with a verdict: **no evidence / suspicious / likel
 
 The report is evidence, not proof: spectate the player before acting.
 
+### Ban waves (silent, delayed bans)
+
+Detected Java cheaters are **never told**. When a check reaches its `suspect-vl`, the player silently becomes a
+suspect and is watched (their cheats are still blocked, so nobody loses hearts to them). Once strong detections
+happen in **2 separate sessions** and the evidence says "likely cheating", they are queued and banned at a
+**random time 1-3 days later**: name, IP addresses and linked alt accounts, for 30 days. Bedrock players and
+IPs used by Bedrock accounts are never banned automatically.
+
+| Command | What it does |
+|---|---|
+| `ng bans` | Show queued bans |
+| `ng bans cancel <player>` | Cancel a queued ban |
+| `ng bans now <player>` | Ban a queued player immediately |
+| `ng alts <player>` | Accounts that joined from the same IP |
+| `ng stats` | Flags per check, last hour / last 24 hours |
+| `ng health` | Timing and errors of every part of NovaGuard |
+| `ng notifytest` | Send a test Discord/email notification |
+
+History of every ban: `plugins/NovaGuard/bans-history.log`. Undo a ban with `pardon <name>` (and `pardon-ip`).
+
+### Notifications (Discord and email)
+
+Set `notify.discord-webhook` and/or `notify.email` in `config.yml`, then run `ng notifytest`. Gmail needs an
+**app password** (not your real password); use a separate Gmail account for the server. Some hosts block
+outgoing email: if the test email never arrives, use the Discord webhook.
+
+### Testing a check safely
+
+Every check has `mode: enforce` or `mode: silent`. Silent checks only log and alert. With `log-context: true`,
+every flag is followed by a `context:` line in `violations.log` showing what the player was doing.
+
 `novaguard.bypass` skips every anti-cheat check (not given to anyone by default, not even ops).
 
 All flags are written to `plugins/NovaGuard/violations.log`.

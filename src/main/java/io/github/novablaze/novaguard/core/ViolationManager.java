@@ -35,10 +35,16 @@ public final class ViolationManager {
         return thread;
     });
     private final File logFile;
+    private final long[] spikeWarnedHour = new long[CheckType.values().length];
 
     public ViolationManager(NovaGuardPlugin plugin) {
         this.plugin = plugin;
         this.logFile = new File(plugin.getDataFolder(), "violations.log");
+    }
+
+    /** True when a failed check may act (rubberband, cancel, damage): not in silent mode, not in shadow mode. */
+    public boolean enforces(PlayerData data, CheckType type) {
+        return !data.shadow && !plugin.settings().check(type).silent();
     }
 
     /**
@@ -46,24 +52,31 @@ public final class ViolationManager {
      *
      * @param amount VL to add
      * @param detail short human readable reason, e.g. "reach 4.91 > 3.55"
+     * @return true when the check should now block the cheat (see {@link #enforces})
      */
-    public void flag(Player player, PlayerData data, CheckType type, double amount, String detail) {
+    public boolean flag(Player player, PlayerData data, CheckType type, double amount, String detail) {
         Settings settings = plugin.settings();
+        long now = System.currentTimeMillis();
         if (data.monitored) {
             plugin.monitor().recordFlag(player.getUniqueId(), type);
         }
         if (data.shadow) {
             // Monitored Bedrock player: written to the log only. No VL, no alert, no kick.
             log("[shadow] " + player.getName() + " would have failed " + type.displayName() + " (" + detail + ")");
-            return;
+            return false;
         }
+        plugin.flagStats().record(type, now);
         double vl = data.violations.add(type, amount);
-        long now = System.currentTimeMillis();
         int ping = player.getPing();
-        String line = String.format(Locale.ROOT, "%s failed %s (%s) VL %.1f ping %dms tps %.1f",
-            player.getName(), type.displayName(), detail, vl, ping, plugin.lag().tps());
+        boolean silent = settings.check(type).silent();
+        String line = String.format(Locale.ROOT, "%s failed %s (%s) VL %.1f ping %dms tps %.1f%s",
+            player.getName(), type.displayName(), detail, vl, ping, plugin.lag().tps(), silent ? " [silent]" : "");
 
         log(line);
+        if (settings.logContext && now - data.lastContextMs[type.ordinal()] >= settings.contextCooldownMs) {
+            data.lastContextMs[type.ordinal()] = now;
+            log("    context: " + context(player, data, now));
+        }
         if (now - data.lastAlertMs[type.ordinal()] >= settings.alertCooldownMs) {
             data.lastAlertMs[type.ordinal()] = now;
             alert(player.getName(), type, detail, vl, ping);
@@ -71,9 +84,17 @@ public final class ViolationManager {
                 plugin.getLogger().info(line);
             }
         }
+        checkSpike(type, now);
+
+        double suspectVl = settings.check(type).suspectVl();
+        if (settings.banWaves && suspectVl > 0 && vl >= suspectVl) {
+            plugin.bans().suspect(player, data, type, vl);
+        }
 
         double kickVl = settings.check(type).kickVl();
-        if (kickVl > 0 && vl >= kickVl && kickAllowed(player, data, now)) {
+        // With ban waves a kick would tell the cheater they were caught: checks that feed the ban wave never kick.
+        boolean banWaveHandles = settings.banWaves && suspectVl > 0 && !data.bedrock;
+        if (!banWaveHandles && kickVl > 0 && vl >= kickVl && kickAllowed(player, data, now)) {
             data.violations.reset(type);
             String reason = type.displayName();
             log(player.getName() + " was kicked for " + reason + " (VL " + String.format(Locale.ROOT, "%.1f", vl) + ")");
@@ -85,6 +106,45 @@ public final class ViolationManager {
                     player.kick(message, PlayerKickEvent.Cause.PLUGIN);
                 }
             });
+        }
+        return !silent;
+    }
+
+    /** What the player was doing: last moves, ping, effects, vehicle, block under the feet. */
+    private static String context(Player player, PlayerData data, long now) {
+        StringBuilder text = new StringBuilder();
+        org.bukkit.Location location = player.getLocation();
+        text.append(String.format(Locale.ROOT, "at %s %.2f %.2f %.2f, on %s, ping %d",
+            location.getWorld().getName(), location.getX(), location.getY(), location.getZ(),
+            location.clone().subtract(0, 0.2, 0).getBlock().getType().name().toLowerCase(Locale.ROOT), player.getPing()));
+        if (player.isInsideVehicle() && player.getVehicle() != null) {
+            text.append(", riding ").append(player.getVehicle().getType().name().toLowerCase(Locale.ROOT));
+        }
+        if (!player.getActivePotionEffects().isEmpty()) {
+            text.append(", effects");
+            player.getActivePotionEffects().forEach(effect -> text.append(' ')
+                .append(effect.getType().getKey().getKey()).append(effect.getAmplifier() + 1));
+        }
+        if (now < data.graceUntilMs) {
+            text.append(", in grace");
+        }
+        text.append(", moves:").append(data.trace.describe(now, 10));
+        return text.toString();
+    }
+
+    /** Warns once per hour when a check suddenly flags far more than usual (a likely new false positive). */
+    private void checkSpike(CheckType type, long now) {
+        long hour = now / 3_600_000L;
+        if (spikeWarnedHour[type.ordinal()] == hour || !plugin.flagStats().spike(type, now)) {
+            return;
+        }
+        spikeWarnedHour[type.ordinal()] = hour;
+        String text = type.displayName() + " flagged " + plugin.flagStats().lastHour(type, now)
+            + " times this hour, far more than usual. After a server or plugin update this usually means a new"
+            + " false positive: consider '" + type.configKey() + ".mode: silent' until it is understood.";
+        plugin.getLogger().warning(text);
+        if (plugin.settings().notifySpike) {
+            plugin.notifier().send("NovaGuard: unusual number of " + type.displayName() + " flags", text);
         }
     }
 

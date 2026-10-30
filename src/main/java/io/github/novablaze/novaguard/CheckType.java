@@ -12,6 +12,8 @@ public enum CheckType {
     WALL_HIT("wall-hit", "WallHit"),
     MULTI_TARGET("multi-target", "MultiTarget"),
     AUTOCLICKER("autoclicker", "AutoClicker"),
+    BLOCK_REACH("block-reach", "BlockReach"),
+    VELOCITY("velocity", "Velocity"),
     DUPE("dupe", "AntiDupe");
 
     private final String configKey;

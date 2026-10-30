@@ -67,4 +67,29 @@ class MonitorVerdictTest {
         MonitorVerdict v = MonitorVerdict.evaluate(clean().flags(CheckType.NOFALL, 3).build());
         assertEquals(MonitorVerdict.Level.SUSPICIOUS, v.level());
     }
+
+    @Test
+    void aimThatFitsNoMouseSensitivityIsSuspicious() {
+        MonitorVerdict v = MonitorVerdict.evaluate(clean().rotationSamples(300).rotationFit(0.2).build());
+        assertTrue(v.score() >= 2);
+        assertTrue(v.caveats().stream().anyMatch(c -> c.contains("cinematic")));
+    }
+
+    @Test
+    void humanRotationAddsNothing() {
+        MonitorVerdict v = MonitorVerdict.evaluate(clean().rotationSamples(300).rotationFit(0.95).build());
+        assertEquals(MonitorVerdict.Level.NO_EVIDENCE, v.level());
+    }
+
+    @Test
+    void bedrockRotationIsIgnored() {
+        MonitorVerdict v = MonitorVerdict.evaluate(clean().bedrock(true).rotationSamples(300).rotationFit(0.1).build());
+        assertEquals(MonitorVerdict.Level.NO_EVIDENCE, v.level());
+    }
+
+    @Test
+    void noKnockbackFlagsCount() {
+        MonitorVerdict v = MonitorVerdict.evaluate(clean().flags(CheckType.VELOCITY, 3).build());
+        assertEquals(MonitorVerdict.Level.SUSPICIOUS, v.level());
+    }
 }

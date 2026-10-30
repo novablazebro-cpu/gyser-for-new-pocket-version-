@@ -9,6 +9,10 @@ alerts:
 
 # Write every flag to plugins/NovaGuard/violations.log
 log-to-file: true
+# Also write what the player was doing (last moves, ping, effects, block below) when a check flags.
+# This is how false positives are found: send these lines to whoever maintains the plugin.
+log-context: true
+context-cooldown-seconds: 10
 
 violations:
   # How much VL every check loses per second.
@@ -28,6 +32,7 @@ lag:
   max-ping-for-movement: 1000
 
 kick:
+  # Only used when ban-waves are disabled (a kick would tell a cheater that they were detected).
   enabled: true
   # Never kick players with a higher ping than this, or when the server TPS is lower than min-tps.
   max-ping: 400
@@ -36,11 +41,18 @@ kick:
   join-grace-seconds: 10
   message: "<red>Kicked by NovaGuard: unfair advantage detected (<check>).</red>"
 
+# Every check has:
+#   enabled:    on/off
+#   mode:       enforce = block the cheat (rubberband / cancel hit); silent = only log and alert.
+#               Use silent to test a check on your server for a while before enforcing it.
+#   kick-vl:    VL that kicks (only without ban waves). 0 = never.
+#   suspect-vl: VL that silently makes a Java player a ban-wave suspect. 0 = never.
 checks:
   speed:
     enabled: true
-    # VL that causes a kick. 0 = never kick for this check.
+    mode: enforce
     kick-vl: 80
+    suspect-vl: 20
     # Slack on top of the player's real speed (sprint-jumping, head-hitters). 1.6 = 60% extra.
     multiplier: 1.6
     ice-multiplier: 3.0
@@ -48,7 +60,9 @@ checks:
     min-overshoot: 0.3
   fly:
     enabled: true
+    mode: enforce
     kick-vl: 80
+    suspect-vl: 20
     # Extra blocks allowed above the highest legit jump.
     jump-margin: 0.6
     # Being in the air this long (ms) without falling at least hover-min-drop blocks = hovering.
@@ -56,45 +70,123 @@ checks:
     hover-min-drop: 0.5
   nofall:
     enabled: true
+    mode: enforce
     kick-vl: 0
+    suspect-vl: 3
     # Moves where the client lies about standing on ground before NoFall triggers.
     min-spoofs: 3
   reach:
     enabled: true
+    mode: enforce
     kick-vl: 30
+    suspect-vl: 8
     # Extra blocks allowed on top of the real reach + hitbox margin.
     tolerance: 0.25
+    # Hits slightly beyond real reach (inside the tolerance) still land, but deal this much damage.
+    # 1.0 = full damage (soft mitigation off).
+    soft-damage-multiplier: 0.75
   aim:
     enabled: true
+    mode: enforce
     kick-vl: 0
+    suspect-vl: 5
     # Maximum angle (degrees) between where the player looks and the target.
     max-angle: 70
     # Suspicious hits in a row before it counts.
     buffer: 3
   wall-hit:
     enabled: true
+    mode: enforce
     kick-vl: 0
+    suspect-vl: 5
     buffer: 3
   multi-target:
     enabled: true
+    mode: enforce
     kick-vl: 0
+    suspect-vl: 5
     # More than max-targets different entities inside window-ms = killaura switching.
     max-targets: 2
     window-ms: 250
   autoclicker:
     enabled: true
+    mode: enforce
     kick-vl: 0
+    suspect-vl: 3
     # Set high on purpose: butterfly/jitter clicking is legit. Maximum 60.
     max-cps: 22
     # Seconds in a row above max-cps before it is flagged.
     seconds: 3
+  block-reach:
+    enabled: true
+    mode: enforce
+    kick-vl: 0
+    suspect-vl: 5
+    # Extra blocks on top of the block_interaction_range attribute (4.5 in survival).
+    tolerance: 0.5
+  velocity:
+    # Anti-knockback. Catches "0% knockback" only; it cannot block anything, so mode does not matter.
+    enabled: true
+    mode: enforce
+    kick-vl: 0
+    suspect-vl: 3
 
 monitor:
   # /monitor <player> watches a player this long, then writes a report to plugins/NovaGuard/reports/.
   duration-hours: 72
-  # Kick a Java player once when the final report says "likely cheating" (never Bedrock, never a ban).
+  # Without ban waves: kick a Java player once when the final report says "likely cheating".
   kick-on-likely: true
   kick-message: "<red>NovaGuard: a 3-day review found likely cheating. Staff will look at the report.</red>"
+
+ban-waves:
+  # Detected cheaters are never told. They become suspects, are watched silently (their cheats are still
+  # blocked), and once the evidence is confirmed across several sessions they are banned later at a random
+  # time, so they cannot tell what got them caught. Bedrock players are never banned automatically.
+  enabled: true
+  # Separate play sessions with strong detections needed (together with a "likely cheating" verdict).
+  min-sessions: 2
+  # The ban happens a random time between these after confirmation. Staff can cancel: /ng bans cancel <name>
+  delay-min-hours: 24
+  delay-max-hours: 72
+  duration-days: 30
+  # Also ban the IP addresses the cheater used (careful: family on the same Wi-Fi is banned too).
+  ip-ban: true
+  # Also ban other accounts that joined from the same IP addresses (see alts below).
+  ban-alts: true
+  reason: "Cheating (NovaGuard)"
+
+alts:
+  # Remember which accounts join from which IP address (stored in plugins/NovaGuard/alts.yml).
+  enabled: true
+  # An IP used by more accounts than this is treated as shared (school, cafe, proxy) and never linked or banned.
+  max-accounts-per-ip: 5
+
+watchdog:
+  # Warn in the console when one check takes longer than this for a single event (milliseconds).
+  slow-ms: 5
+  # A part of NovaGuard that throws this many errors within a minute switches itself off until /ng reload.
+  max-errors-per-minute: 20
+
+notify:
+  # Discord channel webhook URL (Channel settings > Integrations > Webhooks). Empty = off.
+  discord-webhook: ""
+  email:
+    enabled: false
+    # Gmail: smtp.gmail.com, port 465, your Gmail address, and an APP PASSWORD
+    # (Google account > Security > 2-Step Verification > App passwords), never your real password.
+    # Anyone who can read this file can read the password: use a separate Gmail account for the server.
+    smtp-host: "smtp.gmail.com"
+    smtp-port: 465
+    username: ""
+    password: ""
+    from: ""
+    to: ""
+  # Which events are sent.
+  events:
+    suspect: true
+    queued: true
+    banned: true
+    spike: true
 
 anti-dupe:
   enabled: true

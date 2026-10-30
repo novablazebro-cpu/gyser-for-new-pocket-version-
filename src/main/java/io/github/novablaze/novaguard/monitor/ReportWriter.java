@@ -10,7 +10,8 @@ final class ReportWriter {
     private ReportWriter() {
     }
 
-    static String write(MonitorRecord r, MonitorVerdict v, boolean finalReport, boolean kickOnLikely) {
+    /** @param action what NovaGuard did automatically (final reports), or null for an early report */
+    static String write(MonitorRecord r, MonitorVerdict v, boolean finalReport, String action) {
         StringBuilder out = new StringBuilder();
         String type = r.bedrock == null ? "unknown (not seen online yet)"
             : r.bedrock ? "Bedrock (Geyser/Floodgate)" : "Java (cracked/offline)";
@@ -67,19 +68,13 @@ final class ReportWriter {
                 r.flags[check.ordinal()], r.nearMisses[check.ordinal()]));
         }
         line(out, "Dupe alerts: " + r.dupeAlerts);
+        line(out, String.format(Locale.ROOT,
+            "Rotation:  %d camera turns, %.0f%% match a mouse sensitivity (humans: usually 90%%+; Bedrock ignored)",
+            r.rotation.samples(), r.rotation.bestFit() * 100));
+        line(out, "Strong detections in " + r.strongSessions + " of " + r.sessions + " session(s)");
         line(out, "");
 
-        if (finalReport) {
-            String action;
-            if (v.level() != MonitorVerdict.Level.LIKELY_CHEATING || !kickOnLikely) {
-                action = "none";
-            } else if (Boolean.TRUE.equals(r.bedrock)) {
-                action = "none (Bedrock players are never punished automatically; review this report yourself)";
-            } else if (r.pendingKick) {
-                action = "will be kicked when they next join";
-            } else {
-                action = "kicked";
-            }
+        if (finalReport && action != null) {
             line(out, "Automatic action: " + action);
         }
         line(out, "This report is evidence, not proof. Spectate the player before taking action.");

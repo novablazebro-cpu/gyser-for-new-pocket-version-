@@ -40,6 +40,9 @@ grep -q "Done (" server.log || { echo "Server did not start in time"; cat server
 echo "novaguard info nobody" >&3
 echo "monitor list" >&3
 echo "monitor nobody cracked" >&3
+echo "novaguard bans" >&3
+echo "novaguard health" >&3
+echo "novaguard stats" >&3
 sleep 3
 echo "stop" >&3
 wait "$SERVER_PID" || true
@@ -52,6 +55,8 @@ FAIL=0
 grep -q "NovaGuard enabled" server.log || { echo "ERROR: NovaGuard did not enable"; FAIL=1; }
 grep -q "Nobody is being monitored" server.log || { echo "ERROR: /monitor list did not answer"; FAIL=1; }
 grep -q "has never joined this server" server.log || { echo "ERROR: /monitor <player> did not answer"; FAIL=1; }
+grep -q "No bans are queued" server.log || { echo "ERROR: /novaguard bans did not answer"; FAIL=1; }
+grep -q "Flags in the last hour" server.log || { echo "ERROR: /novaguard stats did not answer"; FAIL=1; }
 if grep -E "Error occurred while enabling NovaGuard|Could not load 'plugins/NovaGuard.jar'|Could not pass event .* to NovaGuard" server.log; then
   FAIL=1
 fi

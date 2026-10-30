@@ -24,6 +24,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
@@ -44,7 +45,7 @@ public final class CombatListener implements Listener {
     public void onAttack(PrePlayerAttackEntityEvent event) {
         Player player = event.getPlayer();
         PlayerData data = plugin.players().get(player);
-        check(event, player, data);
+        plugin.safety().run("combat", () -> check(event, player, data));
         if (data.shadow) {
             // Shadow mode (monitored Bedrock player): everything is recorded, nothing is blocked.
             // ignoreCancelled = true means the event was not cancelled before us, so undoing is safe.
@@ -64,7 +65,7 @@ public final class CombatListener implements Listener {
         }
 
         if (settings.enabled(CheckType.AUTOCLICKER) && tooManyClicks(player, data, settings, now)) {
-            event.setCancelled(true);
+            block(event, data, CheckType.AUTOCLICKER);
             return;
         }
         if (settings.enabled(CheckType.MULTI_TARGET)) {
@@ -72,7 +73,7 @@ public final class CombatListener implements Listener {
             if (distinct > settings.multiMaxTargets) {
                 plugin.violations().flag(player, data, CheckType.MULTI_TARGET, 1.0,
                     distinct + " targets in " + settings.multiWindowMs + "ms");
-                event.setCancelled(true);
+                block(event, data, CheckType.MULTI_TARGET);
                 return;
             }
         }
@@ -100,18 +101,48 @@ public final class CombatListener implements Listener {
             plugin.monitor().recordHit(player.getUniqueId(), distance, strictLimit, angle);
         }
 
-        if (settings.enabled(CheckType.REACH)
-            && failsReach(player, data, distance, strictLimit + settings.reachTolerance)) {
-            event.setCancelled(true);
-            return;
+        if (settings.enabled(CheckType.REACH)) {
+            if (failsReach(player, data, distance, strictLimit + settings.reachTolerance)) {
+                block(event, data, CheckType.REACH);
+                return;
+            }
+            if (distance > strictLimit && settings.reachSoftDamage < 1.0
+                && plugin.violations().enforces(data, CheckType.REACH)) {
+                // Soft mitigation: slightly beyond real reach (probably lag) still hits, just weaker.
+                data.softHitTarget = target.getEntityId();
+                data.softHitUntilMs = now + 200;
+            }
         }
         if (settings.enabled(CheckType.AIM) && failsAim(player, data, settings, angle)) {
-            event.setCancelled(true);
+            block(event, data, CheckType.AIM);
             return;
         }
         if (settings.enabled(CheckType.WALL_HIT) && failsWall(player, data, settings, eye, target, seen, distance)) {
+            block(event, data, CheckType.WALL_HIT);
+        }
+    }
+
+    /** Cancels the hit unless the check is in silent mode (or the player is in shadow mode). */
+    private void block(PrePlayerAttackEntityEvent event, PlayerData data, CheckType type) {
+        if (plugin.violations().enforces(data, type)) {
             event.setCancelled(true);
         }
+    }
+
+    /** Applies the reduced damage of a soft-mitigated hit. Runs right after the attack in the same tick. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDamage(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Player player)) {
+            return;
+        }
+        PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
+        if (data == null || data.softHitTarget != event.getEntity().getEntityId()) {
+            return;
+        }
+        if (System.currentTimeMillis() <= data.softHitUntilMs) {
+            event.setDamage(event.getDamage() * plugin.settings().reachSoftDamage);
+        }
+        data.softHitTarget = -1;
     }
 
     /** Spear jabs and charges are decided by the server, so a client cannot fake their reach. */

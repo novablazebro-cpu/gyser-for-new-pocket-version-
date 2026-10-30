@@ -113,3 +113,20 @@ built-in anti-xray), bans.
   250 ms subtracts 2; under 30 minutes of playtime caps the verdict at "suspicious". Suspicious from 3, likely from 6.
 - Report: `plugins/NovaGuard/reports/<name>-<date>.txt`, announced to console and staff.
 - "Likely cheating" kicks a Java player once (on next join if offline), never Bedrock, never a ban (owner's choice).
+
+## Addendum 2026-10-30 (2): reliability package and ban waves (approved in chat)
+
+- Tier 1: flag context in violations.log (`log-context`), per-check `mode: enforce|silent`, `Safety` wrapper
+  (errors logged once, a part failing 20x/min switches off until /ng reload, slow-event warning), BlockReach
+  (hand-dug blocks only, scaffolding skipped, nearer of clicked/placed block).
+- Rotation (GCD) analysis as monitor evidence: step estimated from small turns / 1..64 pixels, refined by
+  least squares, turns touching the +-90 pitch limit ignored. Stress test: 1000 humans all fit 100%, best cheat 10%.
+- Velocity (lenient anti-KB): peak displacement along the knockback after melee hits; three "no knockback" hits in
+  a row flag. Partial anti-KB is not detectable without packet timing.
+- Soft mitigation: hits beyond real reach but inside the tolerance deal `soft-damage-multiplier` damage.
+- Flag statistics per hour (`/ng stats`) and spike warnings; alt tracking by public IP (`alts.yml`).
+- Ban waves (owner's choices): suspects are blocked silently; confirmation = strong detections in
+  `min-sessions` (2) sessions + "likely cheating"; random delay 24-72 h; 30-day ban of name, IPs and linked alts;
+  Bedrock accounts and IPs used by Bedrock accounts excluded; kicks suppressed for checks that feed ban waves.
+- Notifications: Discord webhook and SMTPS email (hostname-verified TLS, connect timeout) for suspect, queued,
+  banned and spike events.

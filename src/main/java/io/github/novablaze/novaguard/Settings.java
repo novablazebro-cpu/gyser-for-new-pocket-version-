@@ -16,7 +16,11 @@ import org.bukkit.configuration.file.FileConfiguration;
  */
 public final class Settings {
 
-    public record CheckSettings(boolean enabled, double kickVl) {
+    /**
+     * @param silent only log and alert, never block (mode: silent)
+     * @param suspectVl VL that makes a Java player a ban-wave suspect (0 = never)
+     */
+    public record CheckSettings(boolean enabled, double kickVl, boolean silent, double suspectVl) {
     }
 
     private final Map<CheckType, CheckSettings> checks = new EnumMap<>(CheckType.class);
@@ -24,6 +28,8 @@ public final class Settings {
     public final long alertCooldownMs;
     public final boolean alertConsole;
     public final boolean logToFile;
+    public final boolean logContext;
+    public final long contextCooldownMs;
     public final double decayPerSecond;
 
     public final int burstMoves;
@@ -49,6 +55,8 @@ public final class Settings {
     public final int noFallMinSpoofs;
 
     public final double reachTolerance;
+    public final double reachSoftDamage;
+    public final double blockReachTolerance;
     public final double aimMaxAngle;
     public final int aimBuffer;
     public final int wallBuffer;
@@ -56,6 +64,34 @@ public final class Settings {
     public final long multiWindowMs;
     public final int maxCps;
     public final int cpsSeconds;
+
+    public final boolean banWaves;
+    public final int banMinSessions;
+    public final long banDelayMinMs;
+    public final long banDelayMaxMs;
+    public final long banDurationDays;
+    public final boolean banIp;
+    public final boolean banAlts;
+    public final String banReason;
+
+    public final boolean altsEnabled;
+    public final int altsMaxAccountsPerIp;
+
+    public final long watchdogSlowNanos;
+    public final int watchdogMaxErrors;
+
+    public final String discordWebhook;
+    public final boolean emailEnabled;
+    public final String smtpHost;
+    public final int smtpPort;
+    public final String smtpUsername;
+    public final String smtpPassword;
+    public final String emailFrom;
+    public final String emailTo;
+    public final boolean notifySuspect;
+    public final boolean notifyQueued;
+    public final boolean notifyBanned;
+    public final boolean notifySpike;
 
     public final long monitorDurationHours;
     public final boolean monitorKickOnLikely;
@@ -73,6 +109,8 @@ public final class Settings {
         alertCooldownMs = Math.max(0, c.getLong("alerts.cooldown-ms", 1500));
         alertConsole = c.getBoolean("alerts.console", true);
         logToFile = c.getBoolean("log-to-file", true);
+        logContext = c.getBoolean("log-context", true);
+        contextCooldownMs = Math.max(0, c.getLong("context-cooldown-seconds", 10)) * 1000L;
         decayPerSecond = Math.max(0, c.getDouble("violations.decay-per-second", 0.5));
 
         burstMoves = Math.max(2, c.getInt("lag.burst-moves", 3));
@@ -89,8 +127,13 @@ public final class Settings {
 
         for (CheckType type : CheckType.values()) {
             String path = "checks." + type.configKey();
+            String mode = c.getString(path + ".mode", "enforce");
+            if (!"enforce".equalsIgnoreCase(mode) && !"silent".equalsIgnoreCase(mode)) {
+                logger.warning(path + ".mode must be 'enforce' or 'silent', not '" + mode + "'. Using enforce.");
+            }
             checks.put(type, new CheckSettings(c.getBoolean(path + ".enabled", true),
-                Math.max(0, c.getDouble(path + ".kick-vl", 0))));
+                Math.max(0, c.getDouble(path + ".kick-vl", 0)), "silent".equalsIgnoreCase(mode),
+                Math.max(0, c.getDouble(path + ".suspect-vl", 0))));
         }
 
         speedMultiplier = Math.max(1.0, c.getDouble("checks.speed.multiplier", 1.6));
@@ -104,6 +147,8 @@ public final class Settings {
         noFallMinSpoofs = Math.max(1, c.getInt("checks.nofall.min-spoofs", 3));
 
         reachTolerance = Math.max(0, c.getDouble("checks.reach.tolerance", 0.25));
+        reachSoftDamage = Math.min(1.0, Math.max(0.0, c.getDouble("checks.reach.soft-damage-multiplier", 0.75)));
+        blockReachTolerance = Math.max(0, c.getDouble("checks.block-reach.tolerance", 0.5));
         aimMaxAngle = Math.min(180, Math.max(10, c.getDouble("checks.aim.max-angle", 70)));
         aimBuffer = Math.max(1, c.getInt("checks.aim.buffer", 3));
         wallBuffer = Math.max(1, c.getInt("checks.wall-hit.buffer", 3));
@@ -112,6 +157,36 @@ public final class Settings {
         // ClickWindow can count at most 64 attacks per second; a higher limit would silently disable the check.
         maxCps = Math.min(60, Math.max(5, c.getInt("checks.autoclicker.max-cps", 22)));
         cpsSeconds = Math.max(1, c.getInt("checks.autoclicker.seconds", 3));
+
+        banWaves = c.getBoolean("ban-waves.enabled", true);
+        banMinSessions = Math.max(1, c.getInt("ban-waves.min-sessions", 2));
+        long minHours = Math.max(0, c.getLong("ban-waves.delay-min-hours", 24));
+        long maxHours = Math.max(minHours, c.getLong("ban-waves.delay-max-hours", 72));
+        banDelayMinMs = minHours * 3_600_000L;
+        banDelayMaxMs = maxHours * 3_600_000L;
+        banDurationDays = Math.max(0, c.getLong("ban-waves.duration-days", 30));
+        banIp = c.getBoolean("ban-waves.ip-ban", true);
+        banAlts = c.getBoolean("ban-waves.ban-alts", true);
+        banReason = c.getString("ban-waves.reason", "Cheating (NovaGuard)");
+
+        altsEnabled = c.getBoolean("alts.enabled", true);
+        altsMaxAccountsPerIp = Math.max(1, c.getInt("alts.max-accounts-per-ip", 5));
+
+        watchdogSlowNanos = Math.max(1, c.getLong("watchdog.slow-ms", 5)) * 1_000_000L;
+        watchdogMaxErrors = Math.max(1, c.getInt("watchdog.max-errors-per-minute", 20));
+
+        discordWebhook = c.getString("notify.discord-webhook", "").trim();
+        emailEnabled = c.getBoolean("notify.email.enabled", false);
+        smtpHost = c.getString("notify.email.smtp-host", "smtp.gmail.com");
+        smtpPort = c.getInt("notify.email.smtp-port", 465);
+        smtpUsername = c.getString("notify.email.username", "");
+        smtpPassword = c.getString("notify.email.password", "");
+        emailFrom = c.getString("notify.email.from", "");
+        emailTo = c.getString("notify.email.to", "");
+        notifySuspect = c.getBoolean("notify.events.suspect", true);
+        notifyQueued = c.getBoolean("notify.events.queued", true);
+        notifyBanned = c.getBoolean("notify.events.banned", true);
+        notifySpike = c.getBoolean("notify.events.spike", true);
 
         monitorDurationHours = Math.max(1, c.getLong("monitor.duration-hours", 72));
         monitorKickOnLikely = c.getBoolean("monitor.kick-on-likely", true);

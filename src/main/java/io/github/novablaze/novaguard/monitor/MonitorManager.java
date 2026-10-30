@@ -125,7 +125,7 @@ public final class MonitorManager implements Runnable {
     /** Writes a report now without ending the watch. Returns the report file name. */
     public String earlyReport(MonitorRecord record) {
         updatePlaytime(record, System.currentTimeMillis());
-        return writeReport(record, false).getName();
+        return writeReport(record, false, null).getName();
     }
 
     // ---------------------------------------------------------------- hooks from checks
@@ -171,6 +171,26 @@ public final class MonitorManager implements Runnable {
                 record.aimOver45++;
             }
         }
+    }
+
+    /** A check reached its suspect VL: counted once per play session. */
+    public void recordStrong(UUID uuid) {
+        MonitorRecord record = records.get(uuid);
+        if (record != null && record.lastStrongSession != record.sessions) {
+            record.lastStrongSession = record.sessions;
+            record.strongSessions++;
+        }
+    }
+
+    public void recordRotation(UUID uuid, float fromPitch, float toPitch) {
+        MonitorRecord record = records.get(uuid);
+        if (record != null) {
+            record.rotation.add(fromPitch, toPitch);
+        }
+    }
+
+    public MonitorRecord get(UUID uuid) {
+        return records.get(uuid);
     }
 
     public void recordDupe(String playerName) {
@@ -236,6 +256,8 @@ public final class MonitorManager implements Runnable {
             }
             if (!record.pendingKick && now >= record.endMs) {
                 finish(record);
+            } else if (!record.pendingKick && plugin.settings().banWaves && confirmedCheater(record)) {
+                queueBan(record, MonitorVerdict.evaluate(record.evidence()));
             }
         }
         if (++minutesSinceSave >= SAVE_EVERY_MINUTES) {
@@ -251,17 +273,72 @@ public final class MonitorManager implements Runnable {
         }
     }
 
+    /** Ban-wave confirmation: strong detections in several sessions AND a "likely cheating" verdict. Java only. */
+    private boolean confirmedCheater(MonitorRecord record) {
+        return !Boolean.TRUE.equals(record.bedrock)
+            && record.strongSessions >= plugin.settings().banMinSessions
+            && MonitorVerdict.evaluate(record.evidence()).level() == MonitorVerdict.Level.LIKELY_CHEATING;
+    }
+
+    /** Ends the watch with a final report and hands the player to the ban wave. Nothing visible happens. */
+    private void queueBan(MonitorRecord record, MonitorVerdict verdict) {
+        updatePlaytime(record, System.currentTimeMillis());
+        record.flushSecond();
+        File report = writeReport(record, true, "queued for the next ban wave (cancel with /ng bans cancel "
+            + record.name + ")");
+        endWatch(record);
+        plugin.bans().queue(record.uuid, record.name, verdict, report.getName());
+        save();
+    }
+
+    private void endWatch(MonitorRecord record) {
+        records.remove(record.uuid);
+        Player online = Bukkit.getPlayer(record.uuid);
+        if (online != null) {
+            PlayerData data = plugin.players().get(online);
+            data.monitored = false;
+            data.shadow = false;
+        }
+    }
+
     private void finish(MonitorRecord record) {
         updatePlaytime(record, System.currentTimeMillis());
         record.flushSecond();
         MonitorVerdict verdict = MonitorVerdict.evaluate(record.evidence());
+        boolean likelyJava = verdict.level() == MonitorVerdict.Level.LIKELY_CHEATING && !Boolean.TRUE.equals(record.bedrock);
+        if (likelyJava && plugin.settings().banWaves) {
+            if (record.strongSessions >= plugin.settings().banMinSessions) {
+                queueBan(record, verdict);
+            } else {
+                // Not confirmed in enough sessions: no automatic punishment, staff decide from the report.
+                File report = writeReport(record, true, "none: 'likely cheating', but strong detections in only "
+                    + record.strongSessions + " session(s) (ban waves need " + plugin.settings().banMinSessions
+                    + "). Review the report.");
+                endWatch(record);
+                if (plugin.settings().notifyQueued) {
+                    plugin.notifier().send("NovaGuard: report for " + record.name + " needs review",
+                        "The watch ended with 'likely cheating' but was not confirmed for an automatic ban.\n"
+                            + "Report: plugins/NovaGuard/reports/" + report.getName());
+                }
+                save();
+            }
+            return;
+        }
         boolean kick = verdict.level() == MonitorVerdict.Level.LIKELY_CHEATING
             && plugin.settings().monitorKickOnLikely && !Boolean.TRUE.equals(record.bedrock);
         Player player = Bukkit.getPlayer(record.uuid);
         if (kick && player == null) {
             record.pendingKick = true;
         }
-        writeReport(record, true);
+        String action;
+        if (verdict.level() != MonitorVerdict.Level.LIKELY_CHEATING || !plugin.settings().monitorKickOnLikely) {
+            action = "none";
+        } else if (Boolean.TRUE.equals(record.bedrock)) {
+            action = "none (Bedrock players are never punished automatically; review this report yourself)";
+        } else {
+            action = record.pendingKick ? "will be kicked when they next join" : "kicked";
+        }
+        writeReport(record, true, action);
         Player online = Bukkit.getPlayer(record.uuid);
         if (online != null) {
             PlayerData data = plugin.players().get(online);
@@ -288,9 +365,9 @@ public final class MonitorManager implements Runnable {
 
     // ---------------------------------------------------------------- report
 
-    private File writeReport(MonitorRecord record, boolean finalReport) {
+    private File writeReport(MonitorRecord record, boolean finalReport, String action) {
         MonitorVerdict verdict = MonitorVerdict.evaluate(record.evidence());
-        String text = ReportWriter.write(record, verdict, finalReport, plugin.settings().monitorKickOnLikely);
+        String text = ReportWriter.write(record, verdict, finalReport, action);
         // Floodgate names start with "." by default, which would make a hidden file: keep names plain.
         String safeName = record.name.replaceAll("[^A-Za-z0-9_-]", "_");
         File out = new File(reportsFolder, safeName + "-" + FILE_DATE.format(Instant.now())

@@ -16,7 +16,8 @@ import org.bukkit.entity.Player;
 /** /novaguard (alias /ng): reload, alerts, info, exempt. */
 public final class NovaGuardCommand implements BasicCommand {
 
-    private static final List<String> SUBCOMMANDS = List.of("alerts", "info", "exempt", "reload");
+    private static final List<String> SUBCOMMANDS =
+        List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "notifytest");
 
     private final NovaGuardPlugin plugin;
 
@@ -46,8 +47,35 @@ public final class NovaGuardCommand implements BasicCommand {
                     exempt(sender, args);
                 }
             }
-            default -> reply(sender, "Usage: /novaguard <alerts|info <player>|exempt <player> <seconds>|reload>",
-                NamedTextColor.YELLOW);
+            case "health" -> {
+                if (requireAdmin(sender)) {
+                    plugin.safety().report().forEach(line -> reply(sender, line, NamedTextColor.AQUA));
+                }
+            }
+            case "stats" -> {
+                if (requireAdmin(sender)) {
+                    stats(sender);
+                }
+            }
+            case "alts" -> {
+                if (requireAdmin(sender)) {
+                    alts(sender, args);
+                }
+            }
+            case "bans" -> {
+                if (requireAdmin(sender)) {
+                    bans(sender, args);
+                }
+            }
+            case "notifytest" -> {
+                if (requireAdmin(sender)) {
+                    plugin.notifier().test();
+                    reply(sender, "Test notification sent (check Discord/email, and the console for errors).",
+                        NamedTextColor.GREEN);
+                }
+            }
+            default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
+                + " | health | stats | alts <player> | bans [cancel|now <player>] | notifytest>", NamedTextColor.YELLOW);
         }
     }
 
@@ -57,7 +85,16 @@ public final class NovaGuardCommand implements BasicCommand {
             String start = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
             return SUBCOMMANDS.stream().filter(s -> s.startsWith(start)).toList();
         }
-        if (args.length == 2 && (args[0].equalsIgnoreCase("info") || args[0].equalsIgnoreCase("exempt"))) {
+        if (args.length == 2 && args[0].equalsIgnoreCase("bans")) {
+            return List.of("cancel", "now");
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("bans")) {
+            List<String> names = new ArrayList<>();
+            plugin.bans().pending().forEach(entry -> names.add(entry.name));
+            return names;
+        }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("info") || args[0].equalsIgnoreCase("exempt")
+            || args[0].equalsIgnoreCase("alts"))) {
             List<String> names = new ArrayList<>();
             String start = args[1].toLowerCase(Locale.ROOT);
             for (Player player : Bukkit.getOnlinePlayers()) {
@@ -73,6 +110,62 @@ public final class NovaGuardCommand implements BasicCommand {
     @Override
     public String permission() {
         return "novaguard.alerts";
+    }
+
+    private void stats(CommandSender sender) {
+        long now = System.currentTimeMillis();
+        reply(sender, "Flags in the last hour / last 24 hours:", NamedTextColor.YELLOW);
+        for (CheckType type : CheckType.values()) {
+            if (type == CheckType.DUPE) {
+                continue;
+            }
+            String mode = plugin.settings().check(type).silent() ? " [silent]" : "";
+            reply(sender, type.displayName() + mode + ": " + plugin.flagStats().lastHour(type, now) + " / "
+                + plugin.flagStats().lastDay(type, now), NamedTextColor.AQUA);
+        }
+    }
+
+    private void alts(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            reply(sender, "Usage: /novaguard alts <player>", NamedTextColor.RED);
+            return;
+        }
+        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayerIfCached(args[1]);
+        if (target == null) {
+            reply(sender, args[1] + " has never joined.", NamedTextColor.RED);
+            return;
+        }
+        java.util.Set<java.util.UUID> alts = plugin.alts().altsOf(target.getUniqueId());
+        if (alts.isEmpty()) {
+            reply(sender, "No other accounts share an IP with " + args[1] + ".", NamedTextColor.GREEN);
+            return;
+        }
+        List<String> names = new ArrayList<>();
+        alts.forEach(alt -> names.add(plugin.alts().nameOf(alt)));
+        reply(sender, args[1] + " shares an IP with: " + String.join(", ", names), NamedTextColor.GOLD);
+    }
+
+    private void bans(CommandSender sender, String[] args) {
+        if (args.length >= 3 && args[1].equalsIgnoreCase("cancel")) {
+            reply(sender, plugin.bans().cancel(args[2]) ? "Cancelled the queued ban of " + args[2] + "."
+                : args[2] + " is not queued.", NamedTextColor.GREEN);
+            return;
+        }
+        if (args.length >= 3 && args[1].equalsIgnoreCase("now")) {
+            reply(sender, plugin.bans().executeNow(args[2]) ? "Banned " + args[2] + " now."
+                : args[2] + " is not queued.", NamedTextColor.GREEN);
+            return;
+        }
+        if (plugin.bans().pending().isEmpty()) {
+            reply(sender, "No bans are queued.", NamedTextColor.GREEN);
+            return;
+        }
+        for (io.github.novablaze.novaguard.ban.BanManager.Pending entry : plugin.bans().pending()) {
+            reply(sender, entry.name + " - banned " + io.github.novablaze.novaguard.ban.BanManager.time(entry.executeMs)
+                + " - " + entry.reason, NamedTextColor.GOLD);
+        }
+        reply(sender, "Cancel one: /novaguard bans cancel <player>   Ban now: /novaguard bans now <player>",
+            NamedTextColor.GRAY);
     }
 
     private void toggleAlerts(CommandSender sender) {

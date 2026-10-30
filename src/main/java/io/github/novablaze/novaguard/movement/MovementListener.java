@@ -37,6 +37,11 @@ public final class MovementListener implements Listener, Runnable {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent event) {
+        plugin.safety().run("movement", () -> handleMove(event));
+    }
+
+    @SuppressWarnings("deprecation") // isOnGround(): the client's claim, recorded for context on purpose
+    private void handleMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
         Location from = event.getFrom();
         Location to = event.getTo();
@@ -46,6 +51,11 @@ public final class MovementListener implements Listener, Runnable {
 
         trackLag(data, settings, now);
         data.history.add(now, Box.ofEntity(to.getX(), to.getY(), to.getZ(), player.getWidth(), player.getHeight()));
+        data.trace.add(now, to.getX(), to.getY(), to.getZ(), player.isOnGround());
+        trackKnockback(player, data, to.getX() - from.getX(), to.getZ() - from.getZ(), now);
+        if (data.monitored && now >= data.graceUntilMs) {
+            plugin.monitor().recordRotation(player.getUniqueId(), from.getPitch(), to.getPitch());
+        }
 
         if (from.getWorld() != to.getWorld()) {
             data.resetMovement(to, now);
@@ -73,17 +83,33 @@ public final class MovementListener implements Listener, Runnable {
         }
         data.afterSkip = false;
 
-        boolean failed = false;
-        if (settings.enabled(CheckType.SPEED)) {
-            failed = checkSpeed(player, data, settings, horizontal, now);
-        }
-        failed |= checkFly(player, data, settings, to, dy, env, now);
-        checkNoFall(player, data, settings, to.getY() - from.getY(), env);
+        boolean speedFailed = settings.enabled(CheckType.SPEED) && checkSpeed(player, data, settings, horizontal, now);
+        boolean flyFailed = checkFly(player, data, settings, to, dy, env, now);
+        checkNoFall(player, data, settings, dy, env);
 
-        if (failed) {
-            setback(event, player, data, now);
+        boolean enforce = speedFailed && plugin.violations().enforces(data, CheckType.SPEED)
+            || flyFailed && plugin.violations().enforces(data, CheckType.FLY);
+        if (enforce) {
+            setback(event, data, now);
+        } else if (speedFailed || flyFailed) {
+            // Silent or shadow mode: no rubberband, but tracking restarts as after a setback,
+            // so one cheat is counted once instead of on every move.
+            data.resetMovement(to, now);
+            data.speedBudget.empty(now);
         } else if (env.grounded() || env.supported()) {
             data.lastGood = to.clone();
+        }
+    }
+
+    /** Anti-knockback: collects movement after a hit and judges it once the lag window is over. */
+    private void trackKnockback(Player player, PlayerData data, double dx, double dz, long now) {
+        if (!data.velocity.active()) {
+            return;
+        }
+        data.velocity.addMove(dx, dz);
+        if (data.velocity.isDue(now) && data.velocity.finish()) {
+            plugin.violations().flag(player, data, CheckType.VELOCITY, 1.0,
+                "took no knockback from 3 hits in a row");
         }
     }
 
@@ -236,9 +262,9 @@ public final class MovementListener implements Listener, Runnable {
             double multiplier = Exemptions.attribute(player, Attribute.FALL_DAMAGE_MULTIPLIER, 1.0);
             double damage = Math.ceil((data.fallDistance - safe) * multiplier);
             if (damage >= 1.0) {
-                plugin.violations().flag(player, data, CheckType.NOFALL, 1.0,
+                boolean enforce = plugin.violations().flag(player, data, CheckType.NOFALL, 1.0,
                     String.format(Locale.ROOT, "fell %.1f blocks while claiming ground", data.fallDistance));
-                if (data.shadow) {
+                if (!enforce) {
                     data.fallDistance = 0;
                     data.groundSpoofs = 0;
                     return;
@@ -255,13 +281,7 @@ public final class MovementListener implements Listener, Runnable {
         data.groundSpoofs = 0;
     }
 
-    private void setback(PlayerMoveEvent event, Player player, PlayerData data, long now) {
-        if (data.shadow) {
-            // Shadow mode: no rubberband, but tracking restarts exactly as after a real setback.
-            data.resetMovement(event.getTo(), now);
-            data.speedBudget.empty(now);
-            return;
-        }
+    private static void setback(PlayerMoveEvent event, PlayerData data, long now) {
         Location from = event.getFrom();
         Location target = data.lastGood != null && data.lastGood.getWorld() == from.getWorld()
             && data.lastGood.distanceSquared(from) < 64 * 64 ? data.lastGood.clone() : from.clone();
@@ -281,14 +301,26 @@ public final class MovementListener implements Listener, Runnable {
      */
     @Override
     public void run() {
+        plugin.safety().run("hover-task", this::checkStandingStill);
+    }
+
+    private void checkStandingStill() {
         Settings settings = plugin.settings();
-        if (!settings.enabled(CheckType.FLY)) {
-            return;
-        }
+        boolean fly = settings.enabled(CheckType.FLY);
         long now = System.currentTimeMillis();
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
-            if (data == null || !data.airborne) {
+            if (data != null && data.velocity.isDue(now)) {
+                boolean noMoveSinceHit = data.lastMoveMs < data.velocityStartMs;
+                boolean wasActive = data.velocityStartMs - data.lastMoveMs < 2000 && player.getPing() < 300;
+                if (noMoveSinceHit && !wasActive) {
+                    data.velocity.cancel(); // Idle or lagging before the hit: cannot judge.
+                } else {
+                    // Knockback always moves a player; staying put after a hit counts as "no knockback".
+                    trackKnockback(player, data, 0, 0, now);
+                }
+            }
+            if (!fly || data == null || !data.airborne) {
                 continue;
             }
             long silentMs = now - data.lastMoveMs;

@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard.monitor;
 
 import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.math.MonitorVerdict;
+import io.github.novablaze.novaguard.math.RotationAnalysis;
 import io.github.novablaze.novaguard.math.RunningStats;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,6 +40,10 @@ public final class MonitorRecord {
     public final int[] flags = new int[CheckType.values().length];
     public final int[] nearMisses = new int[CheckType.values().length];
     public int dupeAlerts;
+    /** Sessions in which a check reached its suspect VL (ban-wave confirmation needs several). */
+    public int strongSessions;
+    public int lastStrongSession;
+    public final RotationAnalysis rotation = new RotationAnalysis();
 
     // Not saved: the attack counter of the current second.
     long currentSecond = -1;
@@ -84,7 +89,9 @@ public final class MonitorRecord {
             .cpsSeconds(cps.count())
             .cpsMean(cps.mean())
             .cpsStdDev(cps.stdDev())
-            .dupeAlerts(dupeAlerts);
+            .dupeAlerts(dupeAlerts)
+            .rotationSamples(rotation.samples())
+            .rotationFit(rotation.bestFit());
         for (CheckType type : CheckType.values()) {
             builder.flags(type, flags[type.ordinal()]);
         }
@@ -109,6 +116,13 @@ public final class MonitorRecord {
         s.set("strict-over-hits", strictOverHits);
         s.set("aim-over-45", aimOver45);
         s.set("dupe-alerts", dupeAlerts);
+        s.set("strong-sessions", strongSessions);
+        s.set("last-strong-session", lastStrongSession);
+        java.util.List<Double> turns = new java.util.ArrayList<>();
+        for (double turn : rotation.values()) {
+            turns.add(turn);
+        }
+        s.set("rotation", turns);
         for (CheckType type : CheckType.values()) {
             s.set("flags." + type.name(), flags[type.ordinal()]);
             s.set("near-misses." + type.name(), nearMisses[type.ordinal()]);
@@ -133,6 +147,9 @@ public final class MonitorRecord {
         r.strictOverHits = s.getLong("strict-over-hits");
         r.aimOver45 = s.getLong("aim-over-45");
         r.dupeAlerts = s.getInt("dupe-alerts");
+        r.strongSessions = s.getInt("strong-sessions");
+        r.lastStrongSession = s.getInt("last-strong-session");
+        r.rotation.restore(s.getDoubleList("rotation").stream().mapToDouble(Double::doubleValue).toArray());
         for (CheckType type : CheckType.values()) {
             r.flags[type.ordinal()] = s.getInt("flags." + type.name());
             r.nearMisses[type.ordinal()] = s.getInt("near-misses." + type.name());

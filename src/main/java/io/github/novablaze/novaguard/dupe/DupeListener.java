@@ -42,12 +42,14 @@ public final class DupeListener implements Listener, Runnable {
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onClick(InventoryClickEvent event) {
-        guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event);
+        plugin.safety().run("anti-dupe",
+            () -> guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
-        guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event);
+        plugin.safety().run("anti-dupe",
+            () -> guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
     }
 
     private void guardEntityContainer(HumanEntity viewer, Inventory top, Cancellable event) {
@@ -151,7 +153,7 @@ public final class DupeListener implements Listener, Runnable {
         }
         Inventory top = event.getInventory();
         // Next tick: items on the cursor and in crafting slots have been returned by then.
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -160,7 +162,7 @@ public final class DupeListener implements Listener, Runnable {
                 fixOverstacked(player, top, "closed container");
             }
             plugin.fingerprints().scan(player, top);
-        });
+        }));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -181,7 +183,8 @@ public final class DupeListener implements Listener, Runnable {
         int index = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
             long delay = 1 + index++ / 2;
-            Bukkit.getScheduler().runTaskLater(plugin, () -> plugin.fingerprints().scan(player, null), delay);
+            Bukkit.getScheduler().runTaskLater(plugin,
+                () -> plugin.safety().run("anti-dupe", () -> plugin.fingerprints().scan(player, null)), delay);
         }
     }
 

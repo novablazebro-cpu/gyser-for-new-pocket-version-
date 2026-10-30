@@ -36,3 +36,11 @@
 | Persistence | Saving state to disk so it survives a restart. | `monitors.yml` written by `MonitorManager` |
 | Tick | One step of the server's game loop (20 per second). Packets are handled once per tick. | Why click timing is measured per second, not per millisecond |
 | Momentum tracking | After a launch, allowing movement only while it slows down the way real physics demands. | `math/Momentum.java` (TNT cannons, slime launchers) |
+| Ban wave | Banning detected cheaters later, all at a random time, so they cannot tell what got them caught. | `ban/BanManager.java` |
+| Canary rollout / silent mode | Running new code without letting it act, to watch for problems first. | `mode: silent` in config.yml |
+| Watchdog | Code that watches other code for errors and slowness. | `core/Safety.java`, `/ng health` |
+| GCD (greatest common divisor) analysis | Finding the one step size all of a player's turns are multiples of. | `math/RotationAnalysis.java` |
+| Least squares | Finding the value that best fits many noisy measurements at once. | `RotationAnalysis.refine()` |
+| Stress test | Running code against thousands of generated cases to find rare failures. | Rotation check: 1000 humans vs 1000 cheats |
+| TLS hostname verification | Checking that an encrypted connection really goes to the server you meant, not an impostor. | `notify/SmtpClient.java` |
+| Webhook | A URL that posts a message into a chat (e.g. Discord) when something calls it. | `notify.discord-webhook` |
