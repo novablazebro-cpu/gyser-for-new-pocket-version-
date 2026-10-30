@@ -1,0 +1,19 @@
+name: NovaGuard
+version: '${version}'
+main: io.github.novablaze.novaguard.NovaGuardPlugin
+api-version: '26.3'
+description: Lightweight, lag-safe anti-cheat and anti-dupe for Paper 26.3.
+authors: [Nova]
+softdepend: [floodgate, Geyser-Spigot]
+permissions:
+  novaguard.admin:
+    description: Use /novaguard reload, info and exempt.
+    default: op
+    children:
+      novaguard.alerts: true
+  novaguard.alerts:
+    description: Receive cheat and dupe alerts.
+    default: op
+  novaguard.bypass:
+    description: Skips every anti-cheat check (anti-dupe still applies).
+    default: false

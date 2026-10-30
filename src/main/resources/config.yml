@@ -1,0 +1,136 @@
+# NovaGuard configuration. Use /novaguard reload after editing.
+# VL = violation level. Every failed check adds VL; VL goes down by itself over time.
+
+alerts:
+  # Minimum milliseconds between two alerts for the same player and check (stops chat spam).
+  cooldown-ms: 1500
+  # Also print alerts in the server console.
+  console: true
+
+# Write every flag to plugins/NovaGuard/violations.log
+log-to-file: true
+
+violations:
+  # How much VL every check loses per second.
+  decay-per-second: 0.5
+
+lag:
+  # When packets get stuck (lag) they arrive in a burst: several moves less than burst-interval-ms apart.
+  # burst-moves such moves in a row = lag spike: nobody is kicked for spike-grace-ms.
+  # Checks keep running, because a timer hack produces bursts too. The speed check's budget already
+  # absorbs about 1 second (+1.5x ping) of stuck movement.
+  burst-moves: 3
+  burst-interval-ms: 10
+  spike-grace-ms: 1500
+  # Movement checks pause while the server TPS is below this.
+  min-tps-for-movement: 18.0
+  # Movement checks pause for players with a ping above this (ms).
+  max-ping-for-movement: 1000
+
+kick:
+  enabled: true
+  # Never kick players with a higher ping than this, or when the server TPS is lower than min-tps.
+  max-ping: 400
+  min-tps: 17.0
+  # Never kick in the first seconds after joining (AuthMe login teleports etc.).
+  join-grace-seconds: 10
+  message: "<red>Kicked by NovaGuard: unfair advantage detected (<check>).</red>"
+
+checks:
+  speed:
+    enabled: true
+    # VL that causes a kick. 0 = never kick for this check.
+    kick-vl: 80
+    # Slack on top of the player's real speed (sprint-jumping, head-hitters). 1.6 = 60% extra.
+    multiplier: 1.6
+    ice-multiplier: 3.0
+    # Ignore overshoots smaller than this (blocks).
+    min-overshoot: 0.3
+  fly:
+    enabled: true
+    kick-vl: 80
+    # Extra blocks allowed above the highest legit jump.
+    jump-margin: 0.6
+    # Being in the air this long (ms) without falling at least hover-min-drop blocks = hovering.
+    hover-ms: 1000
+    hover-min-drop: 0.5
+  nofall:
+    enabled: true
+    kick-vl: 0
+    # Moves where the client lies about standing on ground before NoFall triggers.
+    min-spoofs: 3
+  reach:
+    enabled: true
+    kick-vl: 30
+    # Extra blocks allowed on top of the real reach + hitbox margin.
+    tolerance: 0.25
+  aim:
+    enabled: true
+    kick-vl: 0
+    # Maximum angle (degrees) between where the player looks and the target.
+    max-angle: 70
+    # Suspicious hits in a row before it counts.
+    buffer: 3
+  wall-hit:
+    enabled: true
+    kick-vl: 0
+    buffer: 3
+  multi-target:
+    enabled: true
+    kick-vl: 0
+    # More than max-targets different entities inside window-ms = killaura switching.
+    max-targets: 2
+    window-ms: 250
+  autoclicker:
+    enabled: true
+    kick-vl: 0
+    # Set high on purpose: butterfly/jitter clicking is legit.
+    max-cps: 22
+    # Seconds in a row above max-cps before it is flagged.
+    seconds: 3
+
+anti-dupe:
+  enabled: true
+  # Trim items stacked above their maximum (e.g. 127 totems) and alert.
+  fix-overstacked: true
+  # Close donkey/llama/chest-boat/minecart inventories when the entity dies, teleports or is far away.
+  entity-container-guard: true
+  fingerprints:
+    enabled: true
+    # Delete the extra copy of a duplicated item (only when both copies are in the same scan).
+    # Off by default: deleting a real item by mistake is worse than missing a dupe.
+    remove-duplicates: false
+    scan-interval-seconds: 60
+    # Only unstackable items from this list get a hidden ID.
+    materials:
+      - ELYTRA
+      - TOTEM_OF_UNDYING
+      - MACE
+      - TRIDENT
+      - NETHERITE_SWORD
+      - NETHERITE_AXE
+      - NETHERITE_PICKAXE
+      - NETHERITE_SHOVEL
+      - NETHERITE_HOE
+      - NETHERITE_SPEAR
+      - NETHERITE_HELMET
+      - NETHERITE_CHESTPLATE
+      - NETHERITE_LEGGINGS
+      - NETHERITE_BOOTS
+      - SHULKER_BOX
+      - WHITE_SHULKER_BOX
+      - ORANGE_SHULKER_BOX
+      - MAGENTA_SHULKER_BOX
+      - LIGHT_BLUE_SHULKER_BOX
+      - YELLOW_SHULKER_BOX
+      - LIME_SHULKER_BOX
+      - PINK_SHULKER_BOX
+      - GRAY_SHULKER_BOX
+      - LIGHT_GRAY_SHULKER_BOX
+      - CYAN_SHULKER_BOX
+      - PURPLE_SHULKER_BOX
+      - BLUE_SHULKER_BOX
+      - BROWN_SHULKER_BOX
+      - GREEN_SHULKER_BOX
+      - RED_SHULKER_BOX
+      - BLACK_SHULKER_BOX
