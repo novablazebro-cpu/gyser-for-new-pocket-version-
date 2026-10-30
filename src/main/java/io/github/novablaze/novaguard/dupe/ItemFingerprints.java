@@ -36,6 +36,8 @@ public final class ItemFingerprints {
     private final NamespacedKey key;
     /** Item ID -> the player whose storage it was last seen in. */
     private final Map<String, UUID> lastHolder = new HashMap<>();
+    /** Item IDs already reported as duplicated: each dupe is alerted once, not on every scan. */
+    private final Set<String> reported = new HashSet<>();
 
     public ItemFingerprints(NovaGuardPlugin plugin) {
         this.plugin = plugin;
@@ -67,7 +69,9 @@ public final class ItemFingerprints {
         }
         Set<String> repeated = Duplicates.find(ids);
         for (String id : repeated) {
-            reportSameScan(player, id, found, settings.removeDuplicates);
+            if (reported.add(id) || settings.removeDuplicates) {
+                reportSameScan(player, id, found, settings.removeDuplicates);
+            }
         }
 
         UUID self = player.getUniqueId();
@@ -81,7 +85,9 @@ public final class ItemFingerprints {
                 continue;
             }
             Player other = Bukkit.getPlayer(previous);
-            if (other != null && other.isOnline() && !isCreative(other) && holds(other, f.id())) {
+            if (other != null && other.isOnline() && !isCreative(other) && !reported.contains(f.id())
+                && holds(other, f.id())) {
+                reported.add(f.id());
                 plugin.violations().dupeAlert(player.getName(), "has the same " + itemName(f)
                     + " as " + other.getName() + " (item ID " + shortId(f.id()) + ")");
             }

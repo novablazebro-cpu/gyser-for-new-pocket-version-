@@ -46,6 +46,11 @@ public final class BedrockDetector {
                 // Fall through to the UUID check.
             }
         }
+        return isFloodgateUuid(uuid);
+    }
+
+    /** Floodgate gives Bedrock players UUIDs whose first 64 bits are zero; Java players never have those. */
+    public static boolean isFloodgateUuid(UUID uuid) {
         return uuid.getMostSignificantBits() == 0L;
     }
 }

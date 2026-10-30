@@ -29,4 +29,20 @@ class JumpPhysicsTest {
     void zeroGravityIsCappedInsteadOfLoopingForever() {
         assertTrue(JumpPhysics.maxJumpHeight(0.42, 0.0) < 100);
     }
+
+    @Test
+    void normalJumpIsInTheAirAboutTwelveTicks() {
+        int ticks = JumpPhysics.airTimeTicks(0.42, 0.08);
+        assertTrue(ticks >= 11 && ticks <= 13, "got " + ticks);
+    }
+
+    @Test
+    void jumpBoostFiveStaysUpLongerThanOneSecond() {
+        assertTrue(JumpPhysics.airTimeTicks(JumpPhysics.jumpVelocity(0.42, 4), 0.08) > 20);
+    }
+
+    @Test
+    void airTimeIsCappedForZeroGravity() {
+        assertTrue(JumpPhysics.airTimeTicks(0.42, 0.0) <= 400);
+    }
 }

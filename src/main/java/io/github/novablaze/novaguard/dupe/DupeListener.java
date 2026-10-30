@@ -175,11 +175,13 @@ public final class DupeListener implements Listener, Runnable {
         }, 40L);
     }
 
-    /** Periodic scan of every online player. */
+    /** Periodic scan of every online player, spread over ticks (2 players per tick) to avoid a lag spike. */
     @Override
     public void run() {
+        int index = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
-            plugin.fingerprints().scan(player, null);
+            long delay = 1 + index++ / 2;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> plugin.fingerprints().scan(player, null), delay);
         }
     }
 

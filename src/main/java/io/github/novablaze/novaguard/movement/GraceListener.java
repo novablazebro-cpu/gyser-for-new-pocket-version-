@@ -73,12 +73,12 @@ public final class GraceListener implements Listener {
         long now = System.currentTimeMillis();
         Location to = event.getTo();
         data.resetMovement(to, now);
-        data.speedBudget.reset(now, Double.MAX_VALUE);
         if (now < data.selfTeleportUntilMs) {
-            // Our own setback: no grace, otherwise a cheater would earn free time from every setback.
+            // Our own setback: no grace and the speed budget stays empty, so cheating earns nothing.
             data.selfTeleportUntilMs = 0;
             return;
         }
+        data.speedBudget.fill(now);
         data.teleportedAtMs = now;
         data.history.clear();
         data.grace(now, 1000 + player.getPing());
@@ -243,7 +243,7 @@ public final class GraceListener implements Listener {
         PlayerData data = plugin.players().get(player);
         long now = System.currentTimeMillis();
         data.resetMovement(location, now);
-        data.speedBudget.reset(now, Double.MAX_VALUE);
+        data.speedBudget.fill(now);
         data.history.clear();
         data.teleportedAtMs = now;
         data.grace(now, graceMs);

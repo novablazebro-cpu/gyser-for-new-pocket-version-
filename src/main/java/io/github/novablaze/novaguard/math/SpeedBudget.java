@@ -30,9 +30,15 @@ public final class SpeedBudget {
         return 0.0;
     }
 
-    /** Refills the budget. Passing {@code Double.MAX_VALUE} means "full": the next spend caps it at capacity. */
-    public void reset(long nowMs, double capacity) {
-        budget = capacity;
+    /** Full budget (capped to the real capacity on the next spend). Used after grace periods and teleports. */
+    public void fill(long nowMs) {
+        budget = Double.MAX_VALUE;
+        lastMs = nowMs;
+    }
+
+    /** Empty budget. Used after a setback, so a speed hacker does not get a fresh second of free movement. */
+    public void empty(long nowMs) {
+        budget = 0;
         lastMs = nowMs;
     }
 }

@@ -84,7 +84,7 @@ checks:
   autoclicker:
     enabled: true
     kick-vl: 0
-    # Set high on purpose: butterfly/jitter clicking is legit.
+    # Set high on purpose: butterfly/jitter clicking is legit. Maximum 60.
     max-cps: 22
     # Seconds in a row above max-cps before it is flagged.
     seconds: 3

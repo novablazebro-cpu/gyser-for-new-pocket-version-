@@ -2,6 +2,8 @@ name: Build NovaGuard
 
 on:
   push:
+    branches: ['**']
+    tags: ['novaguard-v*']
   pull_request:
   workflow_dispatch:
 
@@ -36,12 +38,14 @@ jobs:
           name: NovaGuard
           path: build/libs/NovaGuard.jar
 
+      # Only deliberate releases: a version tag (novaguard-v1.2.3) or the main branch.
+      # Work-in-progress branches are built and tested, but never become the "latest" download.
       - name: Publish GitHub Release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/novaguard-v') || github.ref == 'refs/heads/main')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: novaguard-build-${{ github.run_number }}
-          name: NovaGuard build ${{ github.run_number }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('novaguard-build-{0}', github.run_number) }}
+          name: NovaGuard ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('build {0}', github.run_number) }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           files: build/libs/NovaGuard.jar

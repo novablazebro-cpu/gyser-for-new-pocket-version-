@@ -29,4 +29,18 @@ public final class JumpPhysics {
         }
         return height;
     }
+
+    /** How many ticks a jump stays above its take-off height (a normal jump: about 12 ticks). */
+    public static int airTimeTicks(double velocity, double gravity) {
+        double height = 0.0;
+        double v = velocity;
+        for (int tick = 1; tick <= MAX_TICKS; tick++) {
+            height += v;
+            v = (v - gravity) * AIR_DRAG;
+            if (height <= 0) {
+                return tick;
+            }
+        }
+        return MAX_TICKS;
+    }
 }

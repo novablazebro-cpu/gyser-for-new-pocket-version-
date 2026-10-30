@@ -3,6 +3,7 @@ package io.github.novablaze.novaguard.monitor;
 import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
+import io.github.novablaze.novaguard.core.BedrockDetector;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.math.MonitorVerdict;
 import java.io.File;
@@ -76,8 +77,7 @@ public final class MonitorManager implements Runnable {
             beginSession(record, online, data, now);
             typeNote = data.bedrock ? "Bedrock (Floodgate)" : "Java (cracked/offline)";
         } else {
-            // Floodgate UUIDs start with 64 zero bits; anything else on this server is a Java (offline) player.
-            record.bedrock = uuid.getMostSignificantBits() == 0L;
+            record.bedrock = BedrockDetector.isFloodgateUuid(uuid);
             typeNote = (record.bedrock ? "Bedrock" : "Java (cracked/offline)") + ", currently offline";
         }
         save();
@@ -129,10 +129,6 @@ public final class MonitorManager implements Runnable {
     }
 
     // ---------------------------------------------------------------- hooks from checks
-
-    public boolean isMonitored(UUID uuid) {
-        return !records.isEmpty() && records.containsKey(uuid);
-    }
 
     public void recordFlag(UUID uuid, CheckType type) {
         MonitorRecord record = records.get(uuid);

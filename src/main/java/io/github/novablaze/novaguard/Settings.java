@@ -109,7 +109,8 @@ public final class Settings {
         wallBuffer = Math.max(1, c.getInt("checks.wall-hit.buffer", 3));
         multiMaxTargets = Math.max(1, c.getInt("checks.multi-target.max-targets", 2));
         multiWindowMs = Math.max(50, c.getLong("checks.multi-target.window-ms", 250));
-        maxCps = Math.max(5, c.getInt("checks.autoclicker.max-cps", 22));
+        // ClickWindow can count at most 64 attacks per second; a higher limit would silently disable the check.
+        maxCps = Math.min(60, Math.max(5, c.getInt("checks.autoclicker.max-cps", 22)));
         cpsSeconds = Math.max(1, c.getInt("checks.autoclicker.seconds", 3));
 
         monitorDurationHours = Math.max(1, c.getLong("monitor.duration-hours", 72));

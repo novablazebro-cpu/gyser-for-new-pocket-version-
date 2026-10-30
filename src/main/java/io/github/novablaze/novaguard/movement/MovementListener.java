@@ -51,14 +51,15 @@ public final class MovementListener implements Listener, Runnable {
             data.resetMovement(to, now);
             return;
         }
+        if (plugin.exemptions().skipMovement(player, data, now)) {
+            data.resetMovement(to, now);
+            data.speedBudget.fill(now);
+            return;
+        }
+        // Probe only for checked players: exempt ones (Bedrock, creative, flying...) cost nothing extra.
         Environment.Probe env = Environment.probe(player, to);
         if (env.onIce()) {
             data.lastIceMs = now;
-        }
-        if (plugin.exemptions().skipMovement(player, data, now)) {
-            data.resetMovement(to, now);
-            data.speedBudget.reset(now, Double.MAX_VALUE);
-            return;
         }
 
         boolean failed = false;
@@ -93,7 +94,7 @@ public final class MovementListener implements Listener, Runnable {
     private boolean checkSpeed(Player player, PlayerData data, Settings settings, Location from, Location to,
                                long now) {
         if (player.hasPotionEffect(PotionEffectType.DOLPHINS_GRACE)) {
-            data.speedBudget.reset(now, Double.MAX_VALUE);
+            data.speedBudget.fill(now);
             return false;
         }
         double distance = Math.hypot(to.getX() - from.getX(), to.getZ() - from.getZ());
@@ -149,7 +150,12 @@ public final class MovementListener implements Listener, Runnable {
             return true;
         }
 
-        if (now - data.hoverCheckpointMs >= settings.flyHoverMs) {
+        // A Jump Boost V jump stays up ~23 ticks and a slime bounce even longer: wait at least that long.
+        long hoverWindow = Math.max(settings.flyHoverMs, jumpAirTimeMs(player) + 250);
+        if (now < data.bounceUntilMs) {
+            data.hoverCheckpointMs = now;
+            data.hoverCheckpointY = to.getY();
+        } else if (now - data.hoverCheckpointMs >= hoverWindow) {
             boolean hovering = to.getY() > data.hoverCheckpointY - settings.flyHoverMinDrop;
             data.hoverCheckpointMs = now;
             data.hoverCheckpointY = to.getY();
@@ -215,9 +221,9 @@ public final class MovementListener implements Listener, Runnable {
 
     private void setback(PlayerMoveEvent event, Player player, PlayerData data, long now) {
         if (data.shadow) {
-            // Shadow mode: no rubberband, but restart tracking so one cheat is counted once, not every move.
+            // Shadow mode: no rubberband, but tracking restarts exactly as after a real setback.
             data.resetMovement(event.getTo(), now);
-            data.speedBudget.reset(now, Double.MAX_VALUE);
+            data.speedBudget.empty(now);
             return;
         }
         Location from = event.getFrom();
@@ -228,10 +234,15 @@ public final class MovementListener implements Listener, Runnable {
         data.selfTeleportUntilMs = now + 1000;
         event.setTo(target);
         data.resetMovement(target, now);
-        data.speedBudget.reset(now, Double.MAX_VALUE);
+        // Empty, not full: otherwise every setback would hand a speed hacker a fresh second of free movement.
+        data.speedBudget.empty(now);
     }
 
-    /** Stationary hovering sends no move events, so it is looked for once per second. */
+    /**
+     * Stationary hovering sends no move events, so it is looked for once per second.
+     * A frozen connection looks exactly the same from the server, so this only alerts staff; it never
+     * teleports anyone, and gives up after 10 seconds without packets (the player is probably timing out).
+     */
     @Override
     public void run() {
         Settings settings = plugin.settings();
@@ -241,7 +252,11 @@ public final class MovementListener implements Listener, Runnable {
         long now = System.currentTimeMillis();
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
-            if (data == null || !data.airborne || now - data.lastMoveMs < settings.flyHoverMs * 2) {
+            if (data == null || !data.airborne) {
+                continue;
+            }
+            long silentMs = now - data.lastMoveMs;
+            if (silentMs < settings.flyHoverMs * 2 || silentMs > 10_000) {
                 continue;
             }
             Location location = player.getLocation();
@@ -255,27 +270,25 @@ public final class MovementListener implements Listener, Runnable {
                 data.airborne = false;
                 continue;
             }
-            plugin.violations().flag(player, data, CheckType.FLY, 0.5, "hovering while standing still");
-            if (data.shadow) {
-                data.resetMovement(location, now);
-                continue;
-            }
-            Location target = data.lastGood != null && data.lastGood.getWorld() == location.getWorld()
-                ? data.lastGood.clone() : location;
-            target.setYaw(location.getYaw());
-            target.setPitch(location.getPitch());
-            data.selfTeleportUntilMs = now + 1000;
-            player.teleport(target);
-            data.resetMovement(target, now);
+            plugin.violations().flag(player, data, CheckType.FLY, 0.5,
+                "hovering while standing still (no setback: could also be a frozen connection)");
+            // Re-arm without touching lastGood: the hover spot must never become a "legit" setback position.
+            data.airborne = false;
         }
     }
 
     private static double maxJumpHeight(Player player) {
+        return JumpPhysics.maxJumpHeight(jumpVelocity(player), Exemptions.attribute(player, Attribute.GRAVITY, 0.08));
+    }
+
+    private static long jumpAirTimeMs(Player player) {
+        return 50L * JumpPhysics.airTimeTicks(jumpVelocity(player), Exemptions.attribute(player, Attribute.GRAVITY, 0.08));
+    }
+
+    private static double jumpVelocity(Player player) {
         double strength = Exemptions.attribute(player, Attribute.JUMP_STRENGTH, 0.42);
         PotionEffect boost = player.getPotionEffect(PotionEffectType.JUMP_BOOST);
-        double velocity = JumpPhysics.jumpVelocity(strength, boost == null ? -1 : boost.getAmplifier());
-        double gravity = Exemptions.attribute(player, Attribute.GRAVITY, 0.08);
-        return JumpPhysics.maxJumpHeight(velocity, gravity);
+        return JumpPhysics.jumpVelocity(strength, boost == null ? -1 : boost.getAmplifier());
     }
 
     private static boolean usingKineticWeapon(Player player) {

@@ -59,15 +59,40 @@ class SpeedBudgetTest {
         SpeedBudget budget = new SpeedBudget();
         budget.spend(0, 0, 7.0, 9.0);
         budget.spend(0, 9.0, 7.0, 9.0);
-        budget.reset(0, 9.0);
+        budget.fill(0);
         assertEquals(0.0, budget.spend(0, 8.9, 7.0, 9.0), 1e-9);
     }
 
     @Test
-    void resetToFullIsCappedAtCapacityOnNextSpend() {
+    void fillIsCappedAtCapacityOnNextSpend() {
         SpeedBudget budget = new SpeedBudget();
-        budget.reset(0, Double.MAX_VALUE);
+        budget.fill(0);
         // Capacity is 9: spending 9.5 at once must overshoot by 0.5, not be swallowed by MAX_VALUE.
         assertEquals(0.5, budget.spend(0, 9.5, 7.0, 9.0), 1e-9);
+    }
+
+    @Test
+    void emptyBudgetMeansASpeedHackerFlagsAgainQuickly() {
+        SpeedBudget budget = new SpeedBudget();
+        budget.empty(0);
+        // 2x speed right after a setback: overshoots within a few moves instead of after ~5 seconds.
+        double over = 0;
+        long t = 0;
+        for (int i = 0; i < 6 && over == 0; i++) {
+            t += 50;
+            over = budget.spend(t, 0.7, 7.0, 9.0);
+        }
+        assertTrue(over > 0);
+    }
+
+    @Test
+    void emptyBudgetDoesNotPunishNormalWalking() {
+        SpeedBudget budget = new SpeedBudget();
+        budget.empty(0);
+        long t = 0;
+        for (int i = 0; i < 100; i++) {
+            t += 50;
+            assertEquals(0.0, budget.spend(t, 0.28, 7.0, 9.0), 1e-9);
+        }
     }
 }
