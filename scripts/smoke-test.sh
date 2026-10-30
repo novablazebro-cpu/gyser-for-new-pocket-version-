@@ -24,9 +24,10 @@ printf "online-mode=false\nlevel-type=minecraft\\:flat\ngenerate-structures=fals
 
 cd "$WORK"
 mkfifo console
-tail -f console | java -Xms512M -Xmx1536M -jar paper.jar --nogui > server.log 2>&1 &
+# Open the pipe read+write first: this never blocks, and keeps the pipe open for the server's input.
+exec 3<> console
+timeout 600 java -Xms512M -Xmx1536M -jar paper.jar --nogui < console > server.log 2>&1 &
 SERVER_PID=$!
-exec 3> console
 
 for _ in $(seq 1 360); do
   if grep -q "Done (" server.log; then break; fi
@@ -41,7 +42,6 @@ sleep 3
 echo "stop" >&3
 wait "$SERVER_PID" || true
 exec 3>&-
-pkill -f "tail -f console" || true
 
 echo "----- server log (NovaGuard lines) -----"
 grep -i "novaguard" server.log || true
