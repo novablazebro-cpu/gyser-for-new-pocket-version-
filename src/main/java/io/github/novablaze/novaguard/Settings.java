@@ -72,6 +72,7 @@ public final class Settings {
     public final long banDurationDays;
     public final boolean banIp;
     public final boolean banAlts;
+    public final boolean ipBanApproval;
     public final String banReason;
 
     public final boolean altsEnabled;
@@ -167,6 +168,7 @@ public final class Settings {
         banDurationDays = Math.max(0, c.getLong("ban-waves.duration-days", 30));
         banIp = c.getBoolean("ban-waves.ip-ban", true);
         banAlts = c.getBoolean("ban-waves.ban-alts", true);
+        ipBanApproval = c.getBoolean("ban-waves.ip-ban-approval", true);
         banReason = c.getString("ban-waves.reason", "Cheating (NovaGuard)");
 
         altsEnabled = c.getBoolean("alts.enabled", true);

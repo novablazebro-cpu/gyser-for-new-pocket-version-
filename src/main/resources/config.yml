@@ -153,6 +153,11 @@ ban-waves:
   ip-ban: true
   # Also ban other accounts that joined from the same IP addresses (see alts below).
   ban-alts: true
+  # true = the cheater's own account is banned automatically, but the IP ban and the alt bans wait until an
+  # admin approves them. A red alert appears in the console (repeated every 30 minutes) and admins who join
+  # are told. Approve: ng approve <name>   Refuse: ng deny <name>   (waiting list: ip-approvals.yml)
+  # If nobody decides before the account ban ends (duration-days), the request expires and nothing happens.
+  ip-ban-approval: true
   reason: "Cheating (NovaGuard)"
 
 alts:

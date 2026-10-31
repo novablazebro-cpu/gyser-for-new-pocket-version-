@@ -71,11 +71,19 @@ happen in **2 separate sessions** and the evidence says "likely cheating", they 
 **random time 1-3 days later**: name, IP addresses and linked alt accounts, for 30 days. Bedrock players and
 IPs used by Bedrock accounts are never banned automatically.
 
+**IP bans need an admin's approval** (`ban-waves.ip-ban-approval: true`, the default). The cheater's own
+account is banned automatically, but the IP ban and the alt bans wait: a red alert appears in the console
+(repeated every 30 minutes, and admins are told when they join) listing the IPs and every account that would
+be hit. Check that the other accounts are not family on the same Wi-Fi, then decide. Waiting requests are
+kept in `plugins/NovaGuard/ip-approvals.yml` across restarts and expire when the account ban ends.
+
 | Command | What it does |
 |---|---|
 | `ng bans` | Show queued bans |
 | `ng bans cancel <player>` | Cancel a queued ban |
 | `ng bans now <player>` | Ban a queued player immediately |
+| `ng approve <player>` | Approve the waiting IP/alt ban (bans exactly what the red alert listed) |
+| `ng deny <player>` | Refuse it: only the cheater's own account stays banned |
 | `ng alts <player>` | Accounts that joined from the same IP |
 | `ng stats` | Flags per check, last hour / last 24 hours |
 | `ng health` | Timing and errors of every part of NovaGuard |

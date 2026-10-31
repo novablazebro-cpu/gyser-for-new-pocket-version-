@@ -17,7 +17,7 @@ import org.bukkit.entity.Player;
 public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
-        List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "notifytest");
+        List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest");
 
     private final NovaGuardPlugin plugin;
 
@@ -67,6 +67,11 @@ public final class NovaGuardCommand implements BasicCommand {
                     bans(sender, args);
                 }
             }
+            case "approve", "deny" -> {
+                if (requireAdmin(sender)) {
+                    approval(sender, sub, args);
+                }
+            }
             case "notifytest" -> {
                 if (requireAdmin(sender)) {
                     plugin.notifier().test();
@@ -75,7 +80,7 @@ public final class NovaGuardCommand implements BasicCommand {
                 }
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
-                + " | health | stats | alts <player> | bans [cancel|now <player>] | notifytest>", NamedTextColor.YELLOW);
+                + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest>", NamedTextColor.YELLOW);
         }
     }
 
@@ -91,6 +96,11 @@ public final class NovaGuardCommand implements BasicCommand {
         if (args.length == 3 && args[0].equalsIgnoreCase("bans")) {
             List<String> names = new ArrayList<>();
             plugin.bans().pending().forEach(entry -> names.add(entry.name));
+            return names;
+        }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("approve") || args[0].equalsIgnoreCase("deny"))) {
+            List<String> names = new ArrayList<>();
+            plugin.bans().approvals().forEach(approval -> names.add(approval.name));
             return names;
         }
         if (args.length == 2 && (args[0].equalsIgnoreCase("info") || args[0].equalsIgnoreCase("exempt")
@@ -156,6 +166,10 @@ public final class NovaGuardCommand implements BasicCommand {
                 : args[2] + " is not queued.", NamedTextColor.GREEN);
             return;
         }
+        for (io.github.novablaze.novaguard.ban.BanManager.Approval approval : plugin.bans().approvals()) {
+            reply(sender, "WAITING FOR APPROVAL: IP ban for " + approval.name + " - " + plugin.bans().scope(approval)
+                + "  ->  /ng approve " + approval.name + " or /ng deny " + approval.name, NamedTextColor.RED);
+        }
         if (plugin.bans().pending().isEmpty()) {
             reply(sender, "No bans are queued.", NamedTextColor.GREEN);
             return;
@@ -166,6 +180,22 @@ public final class NovaGuardCommand implements BasicCommand {
         }
         reply(sender, "Cancel one: /novaguard bans cancel <player>   Ban now: /novaguard bans now <player>",
             NamedTextColor.GRAY);
+    }
+
+    private void approval(CommandSender sender, String sub, String[] args) {
+        if (args.length < 2) {
+            reply(sender, "Usage: /novaguard " + sub + " <player>", NamedTextColor.RED);
+            return;
+        }
+        if (sub.equals("approve")) {
+            String result = plugin.bans().approve(args[1], sender.getName());
+            reply(sender, result == null ? "No IP ban waits for " + args[1] + "." : "Approved. Banned: " + result,
+                result == null ? NamedTextColor.RED : NamedTextColor.GREEN);
+        } else {
+            reply(sender, plugin.bans().deny(args[1], sender.getName())
+                ? "Refused. Only " + args[1] + "'s own account stays banned; nobody else is affected."
+                : "No IP ban waits for " + args[1] + ".", NamedTextColor.GREEN);
+        }
     }
 
     private void toggleAlerts(CommandSender sender) {

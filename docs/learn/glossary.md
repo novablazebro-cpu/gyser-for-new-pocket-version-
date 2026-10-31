@@ -44,3 +44,6 @@
 | Stress test | Running code against thousands of generated cases to find rare failures. | Rotation check: 1000 humans vs 1000 cheats |
 | TLS hostname verification | Checking that an encrypted connection really goes to the server you meant, not an impostor. | `notify/SmtpClient.java` |
 | Webhook | A URL that posts a message into a chat (e.g. Discord) when something calls it. | `notify.discord-webhook` |
+| Human in the loop | A design where the program prepares a risky decision but a person must say yes before it happens. | `ng approve` for IP bans in `ban/BanManager.java` |
+| Log level (SEVERE) | How serious a log line is; Paper shows SEVERE/ERROR lines in red in the console. | The IP-approval red alert |
+| Snapshot | A frozen copy of data at one moment, so later changes do not alter what was approved. | `Approval.ips` / `Approval.alts` |

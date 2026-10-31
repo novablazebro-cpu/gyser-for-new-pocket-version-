@@ -68,6 +68,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(new CombatListener(this), this);
         pluginManager.registerEvents(new BlockReachListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
+        pluginManager.registerEvents(bans, this);
 
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, movement, 20L, 20L);
