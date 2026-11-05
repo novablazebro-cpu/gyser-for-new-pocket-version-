@@ -30,7 +30,8 @@ servers that also run Geyser/Floodgate.
 | WallHit | hitting through solid blocks | hit cancelled |
 | MultiTarget | switching between many targets very fast | hit cancelled |
 | AutoClicker | extreme attack speed | extra hits cancelled |
-| AntiDupe | overstacked items, entity-chest dupes, duplicated valuables | trimmed / blocked / alert |
+| AntiDupe | overstacked items, entity-chest dupes, duplicated valuables | trimmed / blocked / **copy removed**, warning, ban |
+| IllegalItems | Sharpness 10, Density + Breach, Knockback sticks, Unbreakable | **fixed**, suspect list |
 
 ## Commands and permissions
 
@@ -63,13 +64,69 @@ the console and online staff, with a verdict: **no evidence / suspicious / likel
 
 The report is evidence, not proof: spectate the player before acting.
 
+### Dupes and illegal items
+
+**Undo.** Valuable unstackable items (netherite gear, elytra, totems, maces, tridents, shulker boxes, and every
+enchanted unstackable item or enchanted book) carry a hidden ID. Two items with one ID at the same time = a
+dupe: the extra copy is removed at once (also inside shulker boxes and bundles). Exactly one copy always stays.
+
+**Warn, watch, ban.** A player is warned only when the copy can only have come from them:
+"Warning 1/5 ... more than 5 = automatic ban". The first warning also puts them on the suspect list for 3 days.
+A second warning during those 3 days = banned when the watch ends. No repeat = removed from the list and the
+warnings are cleared. More than 5 warnings = banned at once. A report is written to `plugins/NovaGuard/reports/`.
+
+**Who gets blamed (no innocent player is warned):**
+
+| Situation | Copy removed | Warning |
+|---|---|---|
+| More copies of an item the player already had appear in their own inventory/ender chest | yes | yes |
+| They put an item in a chest and still have it | yes | yes |
+| They dropped an item to someone, then had it back by a crash/kick trick (within 30 min) | their copy | yes |
+| They picked up / took from a chest / got by trade copies someone else duped | the extra | no |
+| A copy is in a shared chest, unclear who made it | the chest copy | no |
+| Item older than the last crash, Kill button or `ng dupe rollback` (72 h) | yes | no |
+| 3+ different players "dupe" within 10 minutes (rollback, plugin bug) | yes | no, warnings taken back and paused 24 h |
+| Creative clones (middle click) | IDs are renewed, not a dupe | no |
+| Staff (`novaguard.dupe.exempt`, default op) | yes | no |
+
+**Illegal items** are fixed with the server's own enchantment rules (so always exactly vanilla): levels above
+the maximum are lowered (Sharpness 10 -> 5), conflicting enchantments lose the lower one (Density + Breach),
+enchantments that cannot be on that item are removed, Unbreakable is removed. **Breach + Wind Burst on a mace
+is legal in vanilla and stays.** Items are fixed when they are picked up, taken from a chest, made in an anvil
+or found in an inventory. Loot from a killed player is fixed, the looter is never blamed. A warning only comes
+when an item NovaGuard had already checked as legal became illegal in the player's own inventory; an illegal
+item of unknown origin only puts the player on the suspect list (it could come from a trade or crate plugin).
+Items carrying another plugin's data (custom enchant plugins) are left alone (`illegal-items.skip-plugin-items`).
+
+Where Sharpness 10 swords usually come from on a cracked server: someone joined with an **op's name** and used
+creative mode. Use AuthMe (or similar) so nobody can log in as an op.
+
+**What cannot be undone:** stackable items (diamonds, netherite ingots, TNT). All copies of a stack are
+identical, so a duped diamond cannot be told apart from a mined one. Keep Paper's anti-dupe settings below on.
+
+| Command | What it does |
+|---|---|
+| `ng dupe <player>` | Warnings, ban history, suspect-list incidents |
+| `ng dupe pardon <player>` | Clear their warnings; earlier incidents no longer count |
+| `ng dupe rollback` | You restored a backup: copies of older items are removed but nobody is warned (72 h) |
+| `ng dupe resume` | End a mass-dupe pause early |
+| `ng selftest` | Runs the fix/undo logic on test items in your server and prints PASS/FAIL |
+| `ng exempt <player> <seconds>` | Also gives their items new IDs (use after restoring an inventory with a rollback plugin) |
+
+### Ban length and IP bans
+
+Every NovaGuard ban (cheating, duping, illegal items) is longer than the one before: **3 days, then 10 days, then
+30 days** (`punishments.ban-days`). From the **2nd ban** on, an admin is asked in a red console alert whether the
+IP should be banned too ("X keeps cheating/duping after being banned 1 time(s) before..."). Nothing happens to
+the IP until `ng approve <player>`. History: `plugins/NovaGuard/offenses.yml` and `bans-history.log`.
+
 ### Ban waves (silent, delayed bans)
 
 Detected Java cheaters are **never told**. When a check reaches its `suspect-vl`, the player silently becomes a
 suspect and is watched (their cheats are still blocked, so nobody loses hearts to them). Once strong detections
 happen in **2 separate sessions** and the evidence says "likely cheating", they are queued and banned at a
-**random time 1-3 days later**: name, IP addresses and linked alt accounts, for 30 days. Bedrock players and
-IPs used by Bedrock accounts are never banned automatically.
+**random time 1-3 days later** (ban length: see above). Bedrock players are never banned for cheat checks, and
+IPs used by Bedrock accounts are never banned.
 
 **IP bans need an admin's approval** (`ban-waves.ip-ban-approval: true`, the default). The cheater's own
 account is banned automatically, but the IP ban and the alt bans wait: a red alert appears in the console
