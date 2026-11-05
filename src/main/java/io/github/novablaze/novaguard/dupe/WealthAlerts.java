@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard.dupe;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
+import io.github.novablaze.novaguard.items.Inventories;
 import io.github.novablaze.novaguard.items.ItemTree;
 import io.github.novablaze.novaguard.math.WealthWindow;
 import java.util.HashMap;
@@ -38,14 +39,14 @@ public final class WealthAlerts {
     }
 
     public void onOpen(Player player, Inventory top) {
-        if (enabled() && ItemFingerprints.isRealStorage(top)) {
+        if (enabled() && Inventories.isRealStorage(top)) {
             openValue.put(player.getUniqueId(), value(top));
         }
     }
 
     public void onClose(Player player, Inventory top) {
         Long before = openValue.remove(player.getUniqueId());
-        if (before != null && ItemFingerprints.isRealStorage(top)) {
+        if (before != null && Inventories.isRealStorage(top)) {
             stored.merge(player.getUniqueId(), value(top) - before, Long::sum);
         }
     }

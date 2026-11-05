@@ -6,6 +6,7 @@ import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.BedrockDetector;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.math.MonitorVerdict;
+import io.github.novablaze.novaguard.store.YamlFiles;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -556,12 +557,7 @@ public final class MonitorManager implements Runnable {
         for (MonitorRecord record : records.values()) {
             record.save(yaml.createSection(record.uuid.toString()));
         }
-        try {
-            Files.createDirectories(file.getParentFile().toPath());
-            yaml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save monitors.yml: " + e.getMessage());
-        }
+        YamlFiles.save(yaml, file, plugin.getLogger());
     }
 
     /** Called on shutdown: count playtime up to now so nothing is lost. */

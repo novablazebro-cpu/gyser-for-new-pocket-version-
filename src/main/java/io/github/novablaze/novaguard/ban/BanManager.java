@@ -10,6 +10,7 @@ import io.github.novablaze.novaguard.math.MonitorVerdict;
 import io.github.novablaze.novaguard.math.PunishmentLadder;
 import io.github.novablaze.novaguard.monitor.MonitorManager;
 import io.papermc.paper.ban.BanListType;
+import io.github.novablaze.novaguard.store.YamlFiles;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -678,12 +679,7 @@ public final class BanManager implements Runnable, Listener {
             s.set("kind", entry.kind);
             s.set("review", entry.review);
         }
-        try {
-            Files.createDirectories(file.getParentFile().toPath());
-            yaml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save bans.yml: " + e.getMessage());
-        }
+        YamlFiles.save(yaml, file, plugin.getLogger());
     }
 
     private void loadApprovals() {
@@ -731,12 +727,7 @@ public final class BanManager implements Runnable, Listener {
             s.set("days", approval.days);
             s.set("ban-number", approval.banNumber);
         }
-        try {
-            Files.createDirectories(approvalsFile.getParentFile().toPath());
-            yaml.save(approvalsFile);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save ip-approvals.yml: " + e.getMessage());
-        }
+        YamlFiles.save(yaml, approvalsFile, plugin.getLogger());
     }
 
     private void historyLine(String text) {

@@ -1,6 +1,7 @@
 package io.github.novablaze.novaguard.core;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
+import io.github.novablaze.novaguard.store.YamlFiles;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -24,6 +25,8 @@ public final class ServerState {
     private String rollbackReason = "";
     /** Dupe warnings are paused until then (mass-dupe fuse). */
     private long strikesPausedUntilMs;
+    /** Last /cleanallexploits (0 = never): chunks and players stamped before it are cleaned when next used. */
+    private long cleanEpochMs;
 
     public ServerState(NovaGuardPlugin plugin) {
         this.plugin = plugin;
@@ -78,6 +81,15 @@ public final class ServerState {
         return rollbackReason;
     }
 
+    public long cleanEpochMs() {
+        return cleanEpochMs;
+    }
+
+    public void setCleanEpoch(long epochMs) {
+        cleanEpochMs = epochMs;
+        save();
+    }
+
     public long strikesPausedUntilMs() {
         return strikesPausedUntilMs;
     }
@@ -95,6 +107,7 @@ public final class ServerState {
         rollbackMs = yaml.getLong("rollback-time");
         rollbackReason = yaml.getString("rollback-reason", "");
         strikesPausedUntilMs = yaml.getLong("strikes-paused-until");
+        cleanEpochMs = yaml.getLong("clean-epoch");
     }
 
     private void save() {
@@ -102,11 +115,7 @@ public final class ServerState {
         yaml.set("rollback-time", rollbackMs);
         yaml.set("rollback-reason", rollbackReason);
         yaml.set("strikes-paused-until", strikesPausedUntilMs);
-        try {
-            Files.createDirectories(file.getParentFile().toPath());
-            yaml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save state.yml: " + e.getMessage());
-        }
+        yaml.set("clean-epoch", cleanEpochMs);
+        YamlFiles.save(yaml, file, plugin.getLogger());
     }
 }

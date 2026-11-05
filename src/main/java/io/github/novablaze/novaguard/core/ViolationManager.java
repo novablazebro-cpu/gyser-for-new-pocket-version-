@@ -229,6 +229,11 @@ public final class ViolationManager {
         }
     }
 
+    /** A line in violations.log only (no chat, no console). */
+    public void logLine(String line) {
+        log(line);
+    }
+
     private void log(String line) {
         if (!plugin.settings().logToFile) {
             return;

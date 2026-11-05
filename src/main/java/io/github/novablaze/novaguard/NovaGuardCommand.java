@@ -19,7 +19,7 @@ public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
         List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
-            "dupe", "item", "unban", "review", "selftest");
+            "dupe", "item", "unban", "review", "cleanall", "selftest");
 
     private final NovaGuardPlugin plugin;
     private final ItemCommands items;
@@ -96,6 +96,11 @@ public final class NovaGuardCommand implements BasicCommand {
                     items.review(sender);
                 }
             }
+            case "cleanall" -> {
+                if (requireAdmin(sender)) {
+                    plugin.cleanCommand().handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
+                }
+            }
             case "selftest" -> {
                 if (requireAdmin(sender)) {
                     items.selftest(sender);
@@ -110,7 +115,7 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
                 + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest"
-                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | selftest>",
+                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | selftest>",
                 NamedTextColor.YELLOW);
         }
     }

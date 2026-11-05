@@ -125,6 +125,22 @@ This is only ever an alert: trades and shops look the same.
 | `ng unban <player>` | Undo a wrong ban completely: account, IPs and alts banned with it, and the ban is removed from the history so the next ban is not longer |
 | `ng exempt <player> <seconds>` | Also gives their items new IDs (use after restoring an inventory with a rollback plugin) |
 
+### Cleaning the whole world: `/cleanallexploits`
+
+Removes every enchantment that is impossible in survival from **every item in the game** and keeps the valid
+ones: online players (inventory, ender chest, cursor), and in every loaded chunk chests, barrels, shulker boxes,
+hoppers, furnaces, item frames, armor stands, mobs' weapons and armor, items on the ground, chest boats,
+minecarts, donkeys and llamas. Chunks that are not loaded are cleaned the moment they load, offline players the
+moment they join. It runs 2 ms per tick, so there is no lag even on big worlds, and nobody is warned or banned.
+
+| Command | What it does |
+|---|---|
+| `/cleanallexploits preview` | Count what would be fixed, change nothing (do this first) |
+| `/cleanallexploits confirm` | Clean for real. Report: `plugins/NovaGuard/reports/cleanup-<date>.txt` |
+| `/cleanallexploits status` / `cancel` | Progress / stop early |
+
+Also available as `ng cleanall ...`. Needs `novaguard.admin`. Design: `docs/adr/ADR-001-clean-all-exploits.md`.
+
 ### Ban length and IP bans
 
 Every NovaGuard ban (cheating, duping, illegal items) is longer than the one before: **3 days, then 10 days, then

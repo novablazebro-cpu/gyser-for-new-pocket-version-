@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard.dupe;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
+import io.github.novablaze.novaguard.items.Inventories;
 import io.github.novablaze.novaguard.items.ItemSanitizer;
 import java.util.ArrayList;
 import java.util.List;
@@ -158,7 +159,7 @@ public final class DupeListener implements Listener, Runnable {
                 plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + typeName(stack)
                     + " (" + original + " > " + stack.getMaxStackSize() + ", trimmed)");
             }
-            if (ItemFingerprints.isCreative(player)) {
+            if (Inventories.isCreative(player)) {
                 return;
             }
             ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(item.getItemStack());
@@ -226,7 +227,7 @@ public final class DupeListener implements Listener, Runnable {
     public void onCreative(InventoryCreativeEvent event) {
         plugin.safety().run("anti-dupe", () -> {
             ItemStack cursor = event.getCursor();
-            ItemStack stripped = plugin.fingerprints().stripIds(cursor);
+            ItemStack stripped = plugin.fingerprints().ids().strip(cursor);
             if (stripped != cursor) {
                 event.setCursor(stripped);
             }
@@ -258,7 +259,7 @@ public final class DupeListener implements Listener, Runnable {
         Player player = event.getPlayer();
         if (plugin.settings().illegalEnabled) {
             Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
-                if (player.isOnline() && !ItemFingerprints.isCreative(player)) {
+                if (player.isOnline() && !Inventories.isCreative(player)) {
                     plugin.fingerprints().sanitizeSilently(player);
                 }
             }));
@@ -284,7 +285,7 @@ public final class DupeListener implements Listener, Runnable {
     public void onStorageClick(InventoryClickEvent event) {
         if (!plugin.settings().illegalEnabled || event instanceof InventoryCreativeEvent
             || event.getClickedInventory() == null || !event.getClickedInventory().equals(event.getView().getTopInventory())
-            || !ItemFingerprints.isRealStorage(event.getClickedInventory())) {
+            || !Inventories.isRealStorage(event.getClickedInventory())) {
             return;
         }
         plugin.safety().run("anti-dupe", () -> {
@@ -305,12 +306,12 @@ public final class DupeListener implements Listener, Runnable {
             return;
         }
         Inventory top = event.getInventory();
-        if (!ItemFingerprints.isRealStorage(top)) {
+        if (!Inventories.isRealStorage(top)) {
             return;
         }
         plugin.safety().run("anti-dupe", () -> {
             fixOverstacked(player, top, "opened container");
-            if (!ItemFingerprints.isCreative(player)) {
+            if (!Inventories.isCreative(player)) {
                 List<String> fixes = plugin.fingerprints().sanitizeInventory(top);
                 if (!fixes.isEmpty()) {
                     plugin.violations().dupeAlert(player.getName(), "opened a container with illegal item(s), fixed"
@@ -334,7 +335,7 @@ public final class DupeListener implements Listener, Runnable {
                 return;
             }
             fixOverstacked(player, player.getInventory(), "inventory");
-            if (ItemFingerprints.isRealStorage(top)) {
+            if (Inventories.isRealStorage(top)) {
                 fixOverstacked(player, top, "closed container");
             }
             // First what went in and out of the container (honest moves), then the scan that judges.

@@ -2,9 +2,8 @@ package io.github.novablaze.novaguard.ban;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.math.StrikeList;
+import io.github.novablaze.novaguard.store.YamlFiles;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -198,11 +197,6 @@ public final class OffenseLog {
             s.set("bans", bans);
             s.set("linked", entry.linked);
         }
-        try {
-            Files.createDirectories(file.getParentFile().toPath());
-            yaml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save offenses.yml: " + e.getMessage());
-        }
+        YamlFiles.save(yaml, file, plugin.getLogger());
     }
 }

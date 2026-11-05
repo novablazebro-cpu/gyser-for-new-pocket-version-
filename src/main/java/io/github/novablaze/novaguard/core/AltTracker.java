@@ -1,8 +1,8 @@
 package io.github.novablaze.novaguard.core;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
+import io.github.novablaze.novaguard.store.YamlFiles;
 import java.io.File;
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
@@ -133,11 +133,8 @@ public final class AltTracker {
             yaml.set(key + ".name", names.get(entry.getKey()));
             yaml.set(key + ".ips", new java.util.ArrayList<>(entry.getValue()));
         }
-        try {
-            yaml.save(file);
+        if (YamlFiles.save(yaml, file, plugin.getLogger())) {
             dirty = false;
-        } catch (IOException e) {
-            plugin.getLogger().warning("Could not save alts.yml: " + e.getMessage());
         }
     }
 }

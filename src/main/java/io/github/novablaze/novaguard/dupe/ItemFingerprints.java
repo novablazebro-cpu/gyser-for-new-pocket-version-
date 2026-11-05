@@ -3,6 +3,8 @@ package io.github.novablaze.novaguard.dupe;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.PlayerData;
+import io.github.novablaze.novaguard.items.Inventories;
+import io.github.novablaze.novaguard.items.ItemIds;
 import io.github.novablaze.novaguard.items.ItemSanitizer;
 import io.github.novablaze.novaguard.items.ItemTree;
 import io.github.novablaze.novaguard.math.DupeBlame;
@@ -13,25 +15,16 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
 import org.bukkit.NamespacedKey;
-import org.bukkit.block.Container;
-import org.bukkit.block.DoubleChest;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 /**
@@ -56,12 +49,9 @@ public final class ItemFingerprints {
      * happen within minutes; older records could blame the wrong player.
      */
     private static final long RELEASE_TTL_MS = 30 * 60_000L;
-    private static final int OFFHAND_SLOT = 40;
-    private static final int CHEST_SLOT = 38;
 
     private final NovaGuardPlugin plugin;
-    private final NamespacedKey key;
-    private final NamespacedKey bornKey;
+    private final ItemIds ids;
     private final NamespacedKey baselineKey;
     private final ItemSanitizer sanitizer;
     /** Item ID -> the player whose storage it was last seen in. */
@@ -79,8 +69,7 @@ public final class ItemFingerprints {
 
     public ItemFingerprints(NovaGuardPlugin plugin) {
         this.plugin = plugin;
-        this.key = new NamespacedKey(plugin, "uid");
-        this.bornKey = new NamespacedKey(plugin, "born");
+        this.ids = new ItemIds(plugin);
         this.baselineKey = new NamespacedKey(plugin, "baseline");
         this.sanitizer = new ItemSanitizer(plugin);
     }
@@ -89,13 +78,17 @@ public final class ItemFingerprints {
         return sanitizer;
     }
 
+    public ItemIds ids() {
+        return ids;
+    }
+
     public ItemHistory history() {
         return history;
     }
 
     /** The NovaGuard ID of an item, or null (for "ng item" on the held item). */
     public String idOf(ItemStack item) {
-        return item == null || item.isEmpty() ? null : readId(item);
+        return item == null || item.isEmpty() ? null : ids.read(item);
     }
 
     public void onRespawn(Player player) {
@@ -115,14 +108,14 @@ public final class ItemFingerprints {
      */
     public void scan(Player player, Inventory openContainer) {
         Settings settings = plugin.settings();
-        if (!settings.dupeEnabled && !settings.illegalEnabled || !player.isOnline() || isCreative(player)) {
+        if (!settings.dupeEnabled && !settings.illegalEnabled || !player.isOnline() || Inventories.isCreative(player)) {
             return;
         }
         long now = System.currentTimeMillis();
         Inventory inventory = player.getInventory();
         Inventory enderChest = player.getEnderChest();
-        Set<Integer> busy = busySlots(player);
-        boolean container = openContainer != null && isRealStorage(openContainer);
+        Set<Integer> busy = Inventories.busySlots(player);
+        boolean container = openContainer != null && Inventories.isRealStorage(openContainer);
 
         // 1. Illegal items.
         boolean baseline = player.getPersistentDataContainer().has(baselineKey, PersistentDataType.BYTE);
@@ -134,7 +127,7 @@ public final class ItemFingerprints {
             List<String> containerFixes = sanitizeInventory(openContainer);
             if (!containerFixes.isEmpty()) {
                 plugin.violations().dupeAlert(player.getName(), "illegal item(s) in an opened "
-                    + typeName(openContainer) + " were fixed (not blamed on " + player.getName() + "): "
+                    + Inventories.name(openContainer) + " were fixed (not blamed on " + player.getName() + "): "
                     + String.join("; ", containerFixes));
             }
         }
@@ -153,7 +146,7 @@ public final class ItemFingerprints {
                 collect(inventory, "inventory", true, found, busy, true, now, owner);
                 collect(enderChest, "ender chest", true, found, Set.of(), true, now, owner);
                 if (container) {
-                    collect(openContainer, "open " + typeName(openContainer), false, found, Set.of(), true, now, owner);
+                    collect(openContainer, "open " + Inventories.name(openContainer), false, found, Set.of(), true, now, owner);
                 }
                 Set<Found> removed = sameScan(player, found, now);
                 crossPlayer(player, found, removed, now);
@@ -193,7 +186,7 @@ public final class ItemFingerprints {
     /** Fixes illegal items of a player who cannot be blamed (just left creative, took from an armor stand). */
     public void sanitizeSilently(Player player) {
         List<String> fixes = new ArrayList<>();
-        fixes.addAll(sanitizeInventory(player.getInventory(), busySlots(player)));
+        fixes.addAll(sanitizeInventory(player.getInventory(), Inventories.busySlots(player)));
         fixes.addAll(sanitizeInventory(player.getEnderChest()));
         if (!fixes.isEmpty()) {
             plugin.violations().dupeAlert(player.getName(), "illegal item(s) fixed (not blamed): "
@@ -217,7 +210,7 @@ public final class ItemFingerprints {
             ItemSanitizer.Result result = sanitizer.sanitize(item);
             if (result.changed()) {
                 inventory.setItem(slot, result.item());
-                fixes.add(typeName(item) + ": " + String.join(", ", result.changes()));
+                fixes.add(Inventories.name(item) + ": " + String.join(", ", result.changes()));
             }
         }
         return fixes;
@@ -234,9 +227,9 @@ public final class ItemFingerprints {
                 continue;
             }
             // Only items tagged by this version have a birth time: they were checked (legal) when tagged.
-            boolean checkedBefore = readId(item) != null && readBorn(item) > 0;
+            boolean checkedBefore = ids.read(item) != null && ids.born(item) > 0;
             inventory.setItem(slot, result.item());
-            String text = typeName(item) + ": " + String.join(", ", result.changes());
+            String text = Inventories.name(item) + ": " + String.join(", ", result.changes());
             fixes.add(text);
             if (checkedBefore && result.selfChanged()) {
                 provable.add(text);
@@ -339,7 +332,7 @@ public final class ItemFingerprints {
                 continue;
             }
             Player other = Bukkit.getPlayer(previous);
-            if (other == null || !other.isOnline() || isCreative(other) || exempt(other, now)) {
+            if (other == null || !other.isOnline() || Inventories.isCreative(other) || exempt(other, now)) {
                 continue;
             }
             List<Found> theirs = new ArrayList<>();
@@ -405,25 +398,25 @@ public final class ItemFingerprints {
 
     /** A player dropped an item: if they still have it later while someone else has it too, they duped it. */
     public void onDrop(Player player, ItemStack dropped) {
-        String id = readId(dropped);
+        String id = ids.read(dropped);
         if (id != null) {
             released.put(id, new Release(player.getUniqueId(), System.currentTimeMillis()));
-            history.add(id, "dropped by " + player.getName() + " at " + where(player.getLocation()));
+            history.add(id, "dropped by " + player.getName() + " at " + Inventories.where(player.getLocation()));
         }
     }
 
     /** A player picked up an item: an honest way for a copy to arrive in their inventory. */
     public void onPickup(Player player, ItemStack picked) {
-        String id = readId(picked);
+        String id = ids.read(picked);
         if (id != null) {
             arrived(player.getUniqueId(), id, 1);
-            history.add(id, "picked up by " + player.getName() + " at " + where(player.getLocation()));
+            history.add(id, "picked up by " + player.getName() + " at " + Inventories.where(player.getLocation()));
         }
     }
 
     /** Remembers which tagged items were in a container when a player opened it. */
     public void snapshotOpen(Player player, Inventory top) {
-        if (isRealStorage(top)) {
+        if (Inventories.isRealStorage(top)) {
             openSnapshot.put(player.getUniqueId(), idsIn(top));
         }
     }
@@ -434,7 +427,7 @@ public final class ItemFingerprints {
      */
     public void recordPlacement(Player player, Inventory top) {
         Map<String, Integer> before = openSnapshot.remove(player.getUniqueId());
-        if (before == null || !isRealStorage(top)) {
+        if (before == null || !Inventories.isRealStorage(top)) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -442,14 +435,14 @@ public final class ItemFingerprints {
         for (Map.Entry<String, Integer> e : after.entrySet()) {
             if (e.getValue() > before.getOrDefault(e.getKey(), 0)) {
                 released.put(e.getKey(), new Release(player.getUniqueId(), now));
-                history.add(e.getKey(), "put into a " + typeName(top) + " by " + player.getName() + containerPlace(top));
+                history.add(e.getKey(), "put into a " + Inventories.name(top) + " by " + player.getName() + containerPlace(top));
             }
         }
         for (Map.Entry<String, Integer> e : before.entrySet()) {
             int taken = e.getValue() - after.getOrDefault(e.getKey(), 0);
             if (taken > 0) {
                 arrived(player.getUniqueId(), e.getKey(), taken);
-                history.add(e.getKey(), "taken out of a " + typeName(top) + " by " + player.getName() + containerPlace(top));
+                history.add(e.getKey(), "taken out of a " + Inventories.name(top) + " by " + player.getName() + containerPlace(top));
             }
         }
     }
@@ -466,9 +459,9 @@ public final class ItemFingerprints {
     private Map<String, Integer> idsIn(Inventory inventory) {
         List<Found> found = new ArrayList<>();
         collect(inventory, "", false, found, Set.of(), false, 0, "");
-        Map<String, Integer> ids = new HashMap<>();
-        found.forEach(f -> ids.merge(f.id(), 1, Integer::sum));
-        return ids;
+        Map<String, Integer> counts = new HashMap<>();
+        found.forEach(f -> counts.merge(f.id(), 1, Integer::sum));
+        return counts;
     }
 
     private Release release(String id, long now) {
@@ -500,17 +493,17 @@ public final class ItemFingerprints {
             if (item == null || item.isEmpty()) {
                 continue;
             }
-            String id = readId(item);
+            String id = ids.read(item);
             if (id == null && tagNew && plugin.settings().fingerprintsEnabled && !busy.contains(slot)
-                && eligible(item)) {
-                item = tagged(item, UUID.randomUUID().toString(), now);
+                && ids.eligible(item, sanitizer)) {
+                item = ids.withId(item, UUID.randomUUID().toString(), now);
                 inventory.setItem(slot, item);
-                id = readId(item);
-                history.add(id, typeName(item) + " got its ID in " + owner + "'s " + where);
+                id = ids.read(item);
+                history.add(id, Inventories.name(item) + " got its ID in " + owner + "'s " + where);
             }
             int[] path = {slot};
             if (id != null) {
-                out.add(new Found(id, readBorn(item), inventory, path, own, where, typeName(item)));
+                out.add(new Found(id, ids.born(item), inventory, path, own, where, Inventories.name(item)));
             }
             collectNested(item, inventory, path, where, own, out, 1);
         }
@@ -526,7 +519,7 @@ public final class ItemFingerprints {
         if (inner == null) {
             return;
         }
-        String place = where + " (inside " + typeName(holder) + ")";
+        String place = where + " (inside " + Inventories.name(holder) + ")";
         for (int i = 0; i < inner.size(); i++) {
             ItemStack item = inner.get(i);
             if (item == null || item.isEmpty()) {
@@ -534,9 +527,9 @@ public final class ItemFingerprints {
             }
             int[] childPath = Arrays.copyOf(path, path.length + 1);
             childPath[path.length] = i;
-            String id = readId(item);
+            String id = ids.read(item);
             if (id != null) {
-                out.add(new Found(id, readBorn(item), inventory, childPath, own, place, typeName(item)));
+                out.add(new Found(id, ids.born(item), inventory, childPath, own, place, Inventories.name(item)));
             }
             collectNested(item, inventory, childPath, place, own, out, depth + 1);
         }
@@ -546,83 +539,10 @@ public final class ItemFingerprints {
     private void retag(Inventory inventory, Set<Integer> busy, long now) {
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
-            if (item != null && !item.isEmpty() && !busy.contains(slot) && readId(item) != null) {
-                inventory.setItem(slot, tagged(item, UUID.randomUUID().toString(), now));
+            if (item != null && !item.isEmpty() && !busy.contains(slot) && ids.read(item) != null) {
+                inventory.setItem(slot, ids.withId(item, UUID.randomUUID().toString(), now));
             }
         }
-    }
-
-    private ItemStack tagged(ItemStack item, String id, long now) {
-        ItemStack copy = item.clone();
-        copy.editPersistentDataContainer(pdc -> {
-            pdc.set(key, PersistentDataType.STRING, id);
-            pdc.set(bornKey, PersistentDataType.LONG, now);
-        });
-        return copy;
-    }
-
-    /**
-     * A copy without NovaGuard IDs (also inside shulkers/bundles). Used for items that come out of the creative
-     * inventory: creative players can clone any item, and a clone is not a dupe.
-     */
-    public ItemStack stripIds(ItemStack item) {
-        return stripIds(item, 0);
-    }
-
-    private ItemStack stripIds(ItemStack item, int depth) {
-        if (item == null || item.isEmpty()) {
-            return item;
-        }
-        ItemStack out = item;
-        if (readId(item) != null || item.getPersistentDataContainer().has(bornKey)) {
-            out = item.clone();
-            out.editPersistentDataContainer(pdc -> {
-                pdc.remove(key);
-                pdc.remove(bornKey);
-            });
-        }
-        if (depth < ItemTree.MAX_DEPTH) {
-            List<ItemStack> children = ItemTree.children(out);
-            if (children != null) {
-                boolean changed = false;
-                for (int i = 0; i < children.size(); i++) {
-                    ItemStack child = children.get(i);
-                    ItemStack stripped = stripIds(child, depth + 1);
-                    if (stripped != child) {
-                        children.set(i, stripped);
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    out = ItemTree.withChildren(out, children);
-                }
-            }
-        }
-        return out;
-    }
-
-    String readId(ItemStack item) {
-        return item.getPersistentDataContainer().get(key, PersistentDataType.STRING);
-    }
-
-    long readBorn(ItemStack item) {
-        Long born = item.getPersistentDataContainer().get(bornKey, PersistentDataType.LONG);
-        return born == null ? 0 : born;
-    }
-
-    private boolean eligible(ItemStack item) {
-        if (item.getMaxStackSize() != 1 || sanitizer.hasForeignData(item)) {
-            return false;
-        }
-        Settings settings = plugin.settings();
-        if (settings.fingerprintMaterials.contains(item.getType())) {
-            return true;
-        }
-        if (!settings.tagEnchanted) {
-            return false;
-        }
-        return !item.getEnchantments().isEmpty()
-            || item.getItemMeta() instanceof EnchantmentStorageMeta book && book.hasStoredEnchants();
     }
 
     // ---------------------------------------------------------------- removing copies
@@ -683,47 +603,14 @@ public final class ItemFingerprints {
     }
 
     ItemStack taggedForTest(ItemStack item, String id) {
-        return tagged(item, id, System.currentTimeMillis());
+        return ids.withId(item, id, System.currentTimeMillis());
     }
 
     // ---------------------------------------------------------------- helpers
 
-    /**
-     * Real block/entity storage. Plugin menus (shops, auction houses, kit previews) are excluded: they often show
-     * copies of real items, which must never count as dupes.
-     */
-    public static boolean isRealStorage(Inventory inventory) {
-        if (inventory == null || inventory.getType() == InventoryType.ENDER_CHEST
-            || inventory.getType() == InventoryType.PLAYER || inventory.getType() == InventoryType.CRAFTING
-            || inventory.getType() == InventoryType.CREATIVE) {
-            return false;
-        }
-        InventoryHolder holder = inventory.getHolder(false);
-        return holder instanceof Container || holder instanceof DoubleChest
-            || holder instanceof Entity && !(holder instanceof HumanEntity);
-    }
-
-    /** Slots that must not be replaced right now: replacing an item in use interrupts it. */
-    private static Set<Integer> busySlots(Player player) {
-        Set<Integer> busy = new HashSet<>();
-        if (player.isHandRaised()) {
-            busy.add(player.getInventory().getHeldItemSlot());
-            busy.add(OFFHAND_SLOT);
-        }
-        if (player.isGliding()) {
-            busy.add(CHEST_SLOT);
-        }
-        return busy;
-    }
-
     private boolean exempt(Player player, long now) {
         PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
         return data != null && now < data.manualExemptUntilMs;
-    }
-
-    /** Creative and spectator players may make anything: they are never scanned or blamed. */
-    static boolean isCreative(Player player) {
-        return player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR;
     }
 
     private static void tell(Player player, net.kyori.adventure.text.Component message) {
@@ -732,27 +619,14 @@ public final class ItemFingerprints {
         }
     }
 
-    private static String typeName(ItemStack item) {
-        return item.getType().name().toLowerCase(Locale.ROOT);
-    }
-
-    private static String typeName(Inventory inventory) {
-        return inventory.getType().name().toLowerCase(Locale.ROOT);
-    }
-
     private static String nameOf(UUID uuid) {
         Player online = Bukkit.getPlayer(uuid);
         return online != null ? online.getName() : uuid.toString().substring(0, 8);
     }
 
-    private static String where(org.bukkit.Location location) {
-        return location.getWorld().getName() + " " + location.getBlockX() + " " + location.getBlockY() + " "
-            + location.getBlockZ();
-    }
-
     private static String containerPlace(Inventory inventory) {
         org.bukkit.Location location = inventory.getLocation();
-        return location == null || location.getWorld() == null ? "" : " at " + where(location);
+        return location == null || location.getWorld() == null ? "" : " at " + Inventories.where(location);
     }
 
     private static String shorten(String text) {

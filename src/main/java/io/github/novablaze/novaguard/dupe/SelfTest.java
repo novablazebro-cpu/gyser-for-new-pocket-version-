@@ -7,6 +7,7 @@ import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.BundleContents;
 import io.papermc.paper.datacomponent.item.ItemContainerContents;
 import io.github.novablaze.novaguard.ban.BanManager;
+import io.github.novablaze.novaguard.cleanup.WorldCleaner;
 import io.papermc.paper.ban.BanListType;
 import java.net.InetAddress;
 import java.time.Duration;
@@ -64,6 +65,9 @@ final class SelfTest {
         check("Duplicated item inside a bundle is removed", this::bundleUndo);
         check("Creative clones lose their hidden ID (also inside shulkers)", this::stripIds);
         check("Unban really lifts an account ban and an IP ban (fake test account)", this::unbanWorks);
+        if (plugin.settings().illegalEnabled) {
+            check("/cleanallexploits: preview changes nothing, confirm fixes only the illegal item", this::cleanup);
+        }
         lines.add(failures == 0 ? "Self-test passed (" + lines.size() + " cases)."
             : "Self-test FAILED: " + failures + " case(s). Please report the lines above.");
     }
@@ -191,10 +195,10 @@ final class SelfTest {
     private String stripIds() {
         ItemStack elytra = tagged(ItemStack.of(Material.ELYTRA));
         ItemStack box = shulker(List.of(elytra));
-        ItemStack stripped = fingerprints.stripIds(box);
+        ItemStack stripped = fingerprints.ids().strip(box);
         Inventory inventory = Bukkit.createInventory(null, 9);
         inventory.setItem(0, stripped);
-        inventory.setItem(1, fingerprints.stripIds(elytra));
+        inventory.setItem(1, fingerprints.ids().strip(elytra));
         int left = fingerprints.collectForTest(inventory).size();
         return left == 0 ? null : left + " IDs left";
     }
@@ -227,6 +231,39 @@ final class SelfTest {
             profiles.pardon(profile);
             ips.pardon(address);
         }
+    }
+
+    private String cleanup() {
+        ItemStack sword = ItemStack.of(Material.NETHERITE_SWORD);
+        sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
+        sword.addUnsafeEnchantment(Enchantment.UNBREAKING, 3);
+        ItemStack mace = ItemStack.of(Material.MACE);
+        mace.addUnsafeEnchantment(Enchantment.BREACH, Enchantment.BREACH.getMaxLevel());
+        mace.addUnsafeEnchantment(Enchantment.WIND_BURST, Enchantment.WIND_BURST.getMaxLevel());
+        Inventory inventory = Bukkit.createInventory(null, 9);
+        inventory.setItem(0, sword);
+        inventory.setItem(4, mace.clone());
+
+        WorldCleaner cleaner = plugin.cleaner();
+        int previewed = cleaner.cleanInventory(inventory, "test", WorldCleaner.newReport(false), null);
+        if (previewed != 1) {
+            return "preview found " + previewed + " illegal items instead of 1";
+        }
+        if (inventory.getItem(0).getEnchantmentLevel(Enchantment.SHARPNESS) != 10) {
+            return "the preview changed an item";
+        }
+        int fixed = cleaner.cleanInventory(inventory, "test", WorldCleaner.newReport(true), null);
+        ItemStack after = inventory.getItem(0);
+        if (fixed != 1 || after.getEnchantmentLevel(Enchantment.SHARPNESS) != Enchantment.SHARPNESS.getMaxLevel()) {
+            return "the sword was not fixed (fixed=" + fixed + ")";
+        }
+        if (after.getEnchantmentLevel(Enchantment.UNBREAKING) != 3) {
+            return "a valid enchantment (Unbreaking 3) was removed";
+        }
+        if (!inventory.getItem(4).equals(mace)) {
+            return "the legal mace was changed";
+        }
+        return null;
     }
 
     private ItemStack tagged(ItemStack item) {

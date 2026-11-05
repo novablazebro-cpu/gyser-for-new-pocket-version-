@@ -2,6 +2,8 @@ package io.github.novablaze.novaguard;
 
 import io.github.novablaze.novaguard.ban.BanManager;
 import io.github.novablaze.novaguard.ban.OffenseLog;
+import io.github.novablaze.novaguard.cleanup.CleanCommand;
+import io.github.novablaze.novaguard.cleanup.WorldCleaner;
 import io.github.novablaze.novaguard.core.ServerState;
 import io.github.novablaze.novaguard.dupe.ItemPunisher;
 import io.github.novablaze.novaguard.dupe.WealthAlerts;
@@ -49,6 +51,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private ServerState serverState;
     private ItemPunisher itemPunisher;
     private WealthAlerts wealth;
+    private WorldCleaner cleaner;
+    private CleanCommand cleanCommand;
     private FlagRateStats flagStats;
     private final MobTracker mobs = new MobTracker();
     private DupeListener dupeListener;
@@ -74,6 +78,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
         serverState.start(System.currentTimeMillis());
         itemPunisher = new ItemPunisher(this);
         wealth = new WealthAlerts(this);
+        cleaner = new WorldCleaner(this);
+        cleanCommand = new CleanCommand(this);
         bans = new BanManager(this);
 
         MovementListener movement = new MovementListener(this);
@@ -85,9 +91,11 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(new BlockReachListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
         pluginManager.registerEvents(bans, this);
+        pluginManager.registerEvents(cleaner, this);
 
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("mob-tracker", mobs), 1L, 1L);
+        Bukkit.getScheduler().runTaskTimer(this, cleaner, 1L, 1L);
         Bukkit.getScheduler().runTaskTimer(this, movement, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, this::decayViolations, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("monitor", monitor), 1200L, 1200L);
@@ -106,6 +114,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
         }
 
         registerCommand("novaguard", "NovaGuard anti-cheat", List.of("ng"), new NovaGuardCommand(this));
+        registerCommand("cleanallexploits", "Remove impossible enchantments from every item in the game",
+            List.of("cleanexploits"), cleanCommand);
         registerCommand("monitor", "Watch a player for a few days and write a cheat report", List.of("ngmonitor"),
             new MonitorCommand(this));
         getLogger().info("NovaGuard enabled: lag-safe checks and anti-dupe are active.");
@@ -224,6 +234,14 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public BanManager bans() {
         return bans;
+    }
+
+    public WorldCleaner cleaner() {
+        return cleaner;
+    }
+
+    public CleanCommand cleanCommand() {
+        return cleanCommand;
     }
 
     public WealthAlerts wealth() {
