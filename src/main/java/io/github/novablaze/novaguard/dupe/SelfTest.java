@@ -6,11 +6,16 @@ import io.github.novablaze.novaguard.items.ItemTree;
 import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.BundleContents;
 import io.papermc.paper.datacomponent.item.ItemContainerContents;
+import io.github.novablaze.novaguard.ban.BanManager;
+import io.papermc.paper.ban.BanListType;
+import java.net.InetAddress;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
@@ -56,6 +61,7 @@ final class SelfTest {
         check("Duplicated items inside a shulker box are removed, the original stays", this::shulkerUndo);
         check("Duplicated item inside a bundle is removed", this::bundleUndo);
         check("Creative clones lose their hidden ID (also inside shulkers)", this::stripIds);
+        check("Unban really lifts an account ban and an IP ban (fake test account)", this::unbanWorks);
         lines.add(failures == 0 ? "Self-test passed (" + lines.size() + " cases)."
             : "Self-test FAILED: " + failures + " case(s). Please report the lines above.");
     }
@@ -189,6 +195,36 @@ final class SelfTest {
         inventory.setItem(1, fingerprints.stripIds(elytra));
         int left = fingerprints.collectForTest(inventory).size();
         return left == 0 ? null : left + " IDs left";
+    }
+
+    /** Bans a made-up account and a documentation-only IP (203.0.113.x), lifts both, and cleans up. */
+    private String unbanWorks() {
+        UUID fake = new UUID(0x4E6F7661L, UUID.randomUUID().getLeastSignificantBits());
+        BanList<org.bukkit.profile.PlayerProfile> profiles = Bukkit.getBanList(BanListType.PROFILE);
+        BanList<InetAddress> ips = Bukkit.getBanList(BanListType.IP);
+        org.bukkit.profile.PlayerProfile profile = Bukkit.createProfile(fake, "NgSelfTest");
+        InetAddress address;
+        try {
+            address = InetAddress.getByName("203.0.113.77");
+        } catch (java.net.UnknownHostException e) {
+            return "could not build the test IP: " + e;
+        }
+        try {
+            profiles.addBan(profile, "NovaGuard self-test", Duration.ofMinutes(1), "NovaGuard");
+            ips.addBan(address, "NovaGuard self-test", Duration.ofMinutes(1), "NovaGuard");
+            if (!profiles.isBanned(profile) || !ips.isBanned(address)) {
+                return "the test bans were not applied";
+            }
+            BanManager.pardonAccount(fake, "NgSelfTest");
+            ips.pardon(address);
+            if (profiles.isBanned(profile)) {
+                return "the account is still banned after unban";
+            }
+            return ips.isBanned(address) ? "the IP is still banned after unban" : null;
+        } finally {
+            profiles.pardon(profile);
+            ips.pardon(address);
+        }
     }
 
     private ItemStack tagged(ItemStack item) {

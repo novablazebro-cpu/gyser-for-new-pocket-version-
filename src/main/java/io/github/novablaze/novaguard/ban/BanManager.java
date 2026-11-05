@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -440,7 +441,7 @@ public final class BanManager implements Runnable, Listener {
      */
     public String unban(UUID uuid, String name, String admin) {
         List<String> done = new ArrayList<>();
-        Bukkit.getBanList(BanListType.PROFILE).pardon(Bukkit.createProfile(uuid, name));
+        pardonAccount(uuid, name);
         done.add("account " + name);
         List<String> linked = plugin.offenses().removeLastBan(uuid);
         for (String entry : linked == null ? List.<String>of() : linked) {
@@ -455,7 +456,7 @@ public final class BanManager implements Runnable, Listener {
             } else if (entry.startsWith("alt:")) {
                 try {
                     UUID alt = UUID.fromString(entry.substring(4));
-                    Bukkit.getBanList(BanListType.PROFILE).pardon(Bukkit.createProfile(alt, plugin.alts().nameOf(alt)));
+                    pardonAccount(alt, plugin.alts().nameOf(alt));
                     done.add("alt " + plugin.alts().nameOf(alt));
                 } catch (IllegalArgumentException e) {
                     plugin.getLogger().warning("Bad alt entry in offenses.yml: " + entry);
@@ -476,6 +477,12 @@ public final class BanManager implements Runnable, Listener {
         historyLine("UNBANNED by " + admin + ": " + name + ": " + summary);
         plugin.getLogger().warning("Unban by " + admin + ": " + name + ": " + summary);
         return summary;
+    }
+
+    /** Lifts an account ban by UUID (BanList.pardon, as the Paper docs recommend). */
+    public static void pardonAccount(UUID uuid, String name) {
+        BanList<org.bukkit.profile.PlayerProfile> profiles = Bukkit.getBanList(BanListType.PROFILE);
+        profiles.pardon(Bukkit.createProfile(uuid, name));
     }
 
     // ---------------------------------------------------------------- IP ban approval
