@@ -40,6 +40,13 @@ public final class WorkQueue implements Runnable {
         tasks.clear();
     }
 
+    /** Drops queued tasks (e.g. those of a cancelled job). @return how many were dropped */
+    public int removeIf(java.util.function.Predicate<Runnable> filter) {
+        int before = tasks.size();
+        tasks.removeIf(filter);
+        return before - tasks.size();
+    }
+
     @Override
     public void run() {
         runTick();

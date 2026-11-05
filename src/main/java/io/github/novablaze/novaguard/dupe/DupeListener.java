@@ -156,7 +156,7 @@ public final class DupeListener implements Listener, Runnable {
                 int original = stack.getAmount();
                 stack.setAmount(stack.getMaxStackSize());
                 item.setItemStack(stack);
-                plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + typeName(stack)
+                plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + Inventories.name(stack)
                     + " (" + original + " > " + stack.getMaxStackSize() + ", trimmed)");
             }
             if (Inventories.isCreative(player)) {
@@ -166,7 +166,7 @@ public final class DupeListener implements Listener, Runnable {
             if (result.changed()) {
                 event.setCancelled(true);
                 item.setItemStack(result.item());
-                String text = typeName(stack) + ": " + String.join(", ", result.changes());
+                String text = Inventories.name(stack) + ": " + String.join(", ", result.changes());
                 plugin.violations().dupeAlert(player.getName(), "picked up an illegal item, fixed before it reached"
                     + " the inventory (not blamed): " + text);
                 player.sendMessage(MiniMessage.miniMessage().deserialize(settings.illegalFixedMessage,
@@ -381,12 +381,8 @@ public final class DupeListener implements Listener, Runnable {
             int original = item.getAmount();
             item.setAmount(item.getMaxStackSize());
             inventory.setItem(slot, item);
-            plugin.violations().dupeAlert(player.getName(), "overstacked " + typeName(item) + " in " + where
+            plugin.violations().dupeAlert(player.getName(), "overstacked " + Inventories.name(item) + " in " + where
                 + " (" + original + " > " + item.getMaxStackSize() + ", trimmed)");
         }
-    }
-
-    private static String typeName(ItemStack item) {
-        return item.getType().name().toLowerCase(Locale.ROOT);
     }
 }

@@ -61,6 +61,11 @@ public final class Inventories {
         return item.getType().name().toLowerCase(Locale.ROOT);
     }
 
+    /** Any enum (block/entity type, equipment slot) in lower case: "chest", "zombie", "off_hand". */
+    public static String lower(Enum<?> value) {
+        return value.name().toLowerCase(Locale.ROOT);
+    }
+
     public static String name(Inventory inventory) {
         return inventory.getType().name().toLowerCase(Locale.ROOT);
     }

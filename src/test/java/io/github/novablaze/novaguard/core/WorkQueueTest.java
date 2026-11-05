@@ -42,4 +42,16 @@ class WorkQueueTest {
     void emptyQueueDoesNothing() {
         assertEquals(0, new WorkQueue(1_000_000).runTick());
     }
+
+    @Test
+    void removeIfDropsOnlyMatchingTasks() {
+        WorkQueue queue = new WorkQueue(1_000_000_000);
+        Runnable keep = () -> { };
+        Runnable drop = () -> { };
+        queue.add(keep);
+        queue.add(drop);
+        queue.add(drop);
+        assertEquals(2, queue.removeIf(task -> task == drop));
+        assertEquals(1, queue.size());
+    }
 }
