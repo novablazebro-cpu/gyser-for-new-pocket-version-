@@ -14,6 +14,9 @@ permissions:
   novaguard.alerts:
     description: Receive cheat and dupe alerts.
     default: op
+  novaguard.dupe.exempt:
+    description: Never warned or banned for dupes / illegal items (duplicates are still removed).
+    default: op
   novaguard.bypass:
     description: Skips every anti-cheat check (anti-dupe still applies).
     default: false

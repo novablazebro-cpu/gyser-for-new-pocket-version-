@@ -43,6 +43,8 @@ echo "monitor nobody cracked" >&3
 echo "novaguard bans" >&3
 echo "novaguard health" >&3
 echo "novaguard stats" >&3
+echo "novaguard selftest" >&3
+echo "novaguard dupe nobody" >&3
 sleep 3
 echo "stop" >&3
 wait "$SERVER_PID" || true
@@ -57,6 +59,10 @@ grep -q "Nobody is being monitored" server.log || { echo "ERROR: /monitor list d
 grep -q "has never joined this server" server.log || { echo "ERROR: /monitor <player> did not answer"; FAIL=1; }
 grep -q "No bans are queued" server.log || { echo "ERROR: /novaguard bans did not answer"; FAIL=1; }
 grep -q "Flags in the last hour" server.log || { echo "ERROR: /novaguard stats did not answer"; FAIL=1; }
+grep -q "nobody has never joined\." server.log || { echo "ERROR: /novaguard dupe did not answer"; FAIL=1; }
+# The self-test fixes illegal items and undoes dupes on test items inside the real server.
+grep -E "PASS |FAIL |Self-test" server.log || true
+grep -q "Self-test passed" server.log || { echo "ERROR: /novaguard selftest did not pass"; FAIL=1; }
 if grep -E "Error occurred while enabling NovaGuard|Could not load 'plugins/NovaGuard.jar'|Could not pass event .* to NovaGuard" server.log; then
   FAIL=1
 fi

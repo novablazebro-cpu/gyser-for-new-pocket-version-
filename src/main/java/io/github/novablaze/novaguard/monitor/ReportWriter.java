@@ -68,6 +68,14 @@ final class ReportWriter {
                 r.flags[check.ordinal()], r.nearMisses[check.ordinal()]));
         }
         line(out, "Dupe alerts: " + r.dupeAlerts);
+        if (!r.itemEvents.isEmpty()) {
+            line(out, "Dupes / illegal items undone by NovaGuard (" + r.strongItemIncidents()
+                + " certain, the rest of unknown origin):");
+            for (MonitorRecord.ItemEvent event : r.itemEvents) {
+                line(out, "  " + MonitorManager.time(event.timeMs()) + (event.strong() ? "  [CERTAIN]  " : "  [unknown]  ")
+                    + event.text());
+            }
+        }
         line(out, String.format(Locale.ROOT,
             "Rotation:  %d camera turns, %.0f%% match a mouse sensitivity (humans: usually 90%%+; Bedrock ignored)",
             r.rotation.samples(), r.rotation.bestFit() * 100));

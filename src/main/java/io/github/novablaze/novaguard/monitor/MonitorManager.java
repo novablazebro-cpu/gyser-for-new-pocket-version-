@@ -99,6 +99,10 @@ public final class MonitorManager implements Runnable {
         if (record == null) {
             return false;
         }
+        if (record.itemWatch) {
+            // Staff decided: the dupe warnings are cleared together with the watch.
+            plugin.offenses().clearStrikes(uuid);
+        }
         Player player = Bukkit.getPlayer(uuid);
         if (player != null) {
             PlayerData data = plugin.players().get(player);
@@ -191,6 +195,84 @@ public final class MonitorManager implements Runnable {
 
     public MonitorRecord get(UUID uuid) {
         return records.get(uuid);
+    }
+
+    /**
+     * A dupe or illegal item was undone. Puts the player on the suspect list (watched for the monitor duration,
+     * 3 days by default) if they are not on it yet.
+     *
+     * @param strong it can only have come from this player (it also gave a warning)
+     */
+    public void itemIncident(Player player, String text, boolean strong) {
+        long now = System.currentTimeMillis();
+        MonitorRecord record = records.get(player.getUniqueId());
+        if (record == null) {
+            start(player.getUniqueId(), player.getName(), player, null, "NovaGuard (dupe / illegal item)");
+            record = records.get(player.getUniqueId());
+            plugin.getLogger().warning(player.getName() + " is now on the suspect list (dupe / illegal item) until "
+                + time(record.endMs) + ".");
+        }
+        if (!record.itemWatch) {
+            // The watch lasts the full duration from the first dupe / illegal item, even if staff started it earlier.
+            record.itemWatch = true;
+            record.endMs = Math.max(record.endMs, now + plugin.settings().monitorDurationHours * 3_600_000L);
+        }
+        record.addItemEvent(now, strong, text);
+        save();
+    }
+
+    /** Staff pardoned the player: earlier incidents no longer count towards a ban. */
+    public void pardonItems(UUID uuid) {
+        MonitorRecord record = records.get(uuid);
+        if (record == null) {
+            return;
+        }
+        for (int i = 0; i < record.itemEvents.size(); i++) {
+            MonitorRecord.ItemEvent event = record.itemEvents.get(i);
+            if (event.strong()) {
+                record.itemEvents.set(i, new MonitorRecord.ItemEvent(event.timeMs(), false, event.text() + " (pardoned)"));
+            }
+        }
+        save();
+    }
+
+    /** A mass dupe turned out to be a rollback: the warnings given since then no longer count towards a ban. */
+    public void refundStrongSince(long sinceMs) {
+        boolean changed = false;
+        for (MonitorRecord record : records.values()) {
+            for (int i = 0; i < record.itemEvents.size(); i++) {
+                MonitorRecord.ItemEvent event = record.itemEvents.get(i);
+                if (event.strong() && event.timeMs() >= sinceMs) {
+                    record.itemEvents.set(i, new MonitorRecord.ItemEvent(event.timeMs(), false,
+                        event.text() + " (warning taken back: mass dupe / rollback)"));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            save();
+        }
+    }
+
+    /** Ends the watch with a final report and bans the player now (dupes / illegal items). */
+    public void itemBan(UUID uuid, String reason) {
+        MonitorRecord record = records.get(uuid);
+        String reportName = null;
+        String name;
+        if (record != null) {
+            updatePlaytime(record, System.currentTimeMillis());
+            record.flushSecond();
+            File report = writeReport(record, true, "banned (" + plugin.bans().describeNextBan(uuid) + "): " + reason);
+            reportName = report.getName();
+            name = record.name;
+            endWatch(record);
+            save();
+        } else {
+            org.bukkit.OfflinePlayer offline = Bukkit.getOfflinePlayer(uuid);
+            name = offline.getName() != null ? offline.getName() : uuid.toString();
+        }
+        plugin.offenses().clearStrikes(uuid);
+        plugin.bans().banNow(uuid, name, reason, reportName, "dupe/illegal items");
     }
 
     public void recordDupe(String playerName) {
@@ -304,6 +386,25 @@ public final class MonitorManager implements Runnable {
     private void finish(MonitorRecord record) {
         updatePlaytime(record, System.currentTimeMillis());
         record.flushSecond();
+        if (record.itemWatch) {
+            Settings settings = plugin.settings();
+            int strong = record.strongItemIncidents();
+            boolean punishable = !Boolean.TRUE.equals(record.bedrock) || settings.punishBedrock;
+            if (strong >= 2 && settings.itemBanOnRepeat && settings.punishEnabled && punishable) {
+                itemBan(record.uuid, "duped / made illegal items again while on the suspect list (" + strong
+                    + " times in " + settings.monitorDurationHours + " hours)");
+                return;
+            }
+            // Not repeated: off the suspect list, warnings cleared.
+            plugin.offenses().clearStrikes(record.uuid);
+            plugin.getLogger().info(record.name + " did not dupe again during the watch: removed from the suspect list"
+                + " and their dupe warnings were cleared.");
+            Player online = Bukkit.getPlayer(record.uuid);
+            if (online != null && strong > 0) {
+                online.sendMessage(Component.text("[NovaGuard] Your dupe warnings were cleared. Keep it fair!",
+                    NamedTextColor.GREEN));
+            }
+        }
         MonitorVerdict verdict = MonitorVerdict.evaluate(record.evidence());
         boolean likelyJava = verdict.level() == MonitorVerdict.Level.LIKELY_CHEATING && !Boolean.TRUE.equals(record.bedrock);
         if (likelyJava && plugin.settings().banWaves) {

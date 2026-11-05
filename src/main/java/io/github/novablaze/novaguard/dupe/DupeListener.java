@@ -16,12 +16,19 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.EntityPortalEvent;
 import org.bukkit.event.entity.EntityTeleportEvent;
+import org.bukkit.GameMode;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryCreativeEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import io.github.novablaze.novaguard.items.ItemSanitizer;
 import org.bukkit.event.vehicle.VehicleDestroyEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -119,31 +126,160 @@ public final class DupeListener implements Listener, Runnable {
 
     // ---- Overstacked items + fingerprint scans ----
 
+    /**
+     * Items on the ground are fixed before they reach the inventory: overstacked stacks are trimmed and illegal
+     * enchantments removed. The player picking it up is never blamed (it may be loot from a killed cheater).
+     * The pickup is cancelled once and the fixed item is picked up on the next tick.
+     */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPickup(EntityPickupItemEvent event) {
         if (!(event.getEntity() instanceof Player player)) {
             return;
         }
         Settings settings = plugin.settings();
-        if (!settings.dupeEnabled || !settings.fixOverstacked) {
+        if (!settings.dupeEnabled && !settings.illegalEnabled) {
             return;
         }
-        Item item = event.getItem();
-        ItemStack stack = item.getItemStack();
-        if (stack.getAmount() > stack.getMaxStackSize()) {
-            int original = stack.getAmount();
-            stack.setAmount(stack.getMaxStackSize());
-            item.setItemStack(stack);
-            plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + typeName(stack)
-                + " (" + original + " > " + stack.getMaxStackSize() + ", trimmed)");
+        plugin.safety().run("anti-dupe", () -> {
+            Item item = event.getItem();
+            ItemStack stack = item.getItemStack();
+            if (settings.dupeEnabled && settings.fixOverstacked && stack.getAmount() > stack.getMaxStackSize()) {
+                int original = stack.getAmount();
+                stack.setAmount(stack.getMaxStackSize());
+                item.setItemStack(stack);
+                plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + typeName(stack)
+                    + " (" + original + " > " + stack.getMaxStackSize() + ", trimmed)");
+            }
+            if (isCreative(player)) {
+                return;
+            }
+            ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(item.getItemStack());
+            if (result.changed()) {
+                event.setCancelled(true);
+                item.setItemStack(result.item());
+                String text = typeName(stack) + ": " + String.join(", ", result.changes());
+                plugin.violations().dupeAlert(player.getName(), "picked up an illegal item, fixed before it reached"
+                    + " the inventory (not blamed): " + text);
+                player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(
+                    settings.illegalFixedMessage,
+                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("changes", text)));
+            }
+        });
+    }
+
+    /** Counts the pickup as an honest way for a copy to arrive (see ItemFingerprints). */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPickupDone(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            plugin.safety().run("anti-dupe", () -> plugin.fingerprints().onPickup(player, event.getItem().getItemStack()));
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onOpen(InventoryOpenEvent event) {
-        if (event.getPlayer() instanceof Player player && ItemFingerprints.isStorage(event.getInventory())) {
-            fixOverstacked(player, event.getInventory(), "opened container");
+    public void onDrop(PlayerDropItemEvent event) {
+        plugin.safety().run("anti-dupe",
+            () -> plugin.fingerprints().onDrop(event.getPlayer(), event.getItemDrop().getItemStack()));
+    }
+
+    /**
+     * Creative players can clone any item (middle click). A clone keeps the hidden ID, so it would look like a
+     * dupe later: items coming out of the creative inventory lose their ID and get a new one.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onCreative(InventoryCreativeEvent event) {
+        plugin.safety().run("anti-dupe", () -> {
+            ItemStack cursor = event.getCursor();
+            ItemStack stripped = plugin.fingerprints().stripIds(cursor);
+            if (stripped != cursor) {
+                event.setCursor(stripped);
+            }
+        });
+    }
+
+    /** Leaving creative: items made in creative are fixed silently (creative players may make anything). */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onGameMode(PlayerGameModeChangeEvent event) {
+        Player player = event.getPlayer();
+        GameMode from = player.getGameMode();
+        GameMode to = event.getNewGameMode();
+        boolean leavingCreative = (from == GameMode.CREATIVE || from == GameMode.SPECTATOR)
+            && to != GameMode.CREATIVE && to != GameMode.SPECTATOR;
+        if (leavingCreative && plugin.settings().illegalEnabled) {
+            Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
+                if (player.isOnline()) {
+                    plugin.fingerprints().sanitizeSilently(player);
+                }
+            }));
         }
+    }
+
+    /** Taking an item off an armor stand puts it straight into the hand (no pickup): fix it, blame nobody. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onArmorStand(PlayerArmorStandManipulateEvent event) {
+        Player player = event.getPlayer();
+        if (plugin.settings().illegalEnabled) {
+            Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
+                if (player.isOnline() && !isCreative(player)) {
+                    plugin.fingerprints().sanitizeSilently(player);
+                }
+            }));
+        }
+    }
+
+    /** Anvils (and plugins that change anvil results) can never output an illegal item. */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onAnvil(PrepareAnvilEvent event) {
+        if (!plugin.settings().illegalEnabled || event.getResult() == null) {
+            return;
+        }
+        plugin.safety().run("anti-dupe", () -> {
+            ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(event.getResult());
+            if (result.changed()) {
+                event.setResult(result.item());
+            }
+        });
+    }
+
+    /** Taking an illegal item out of a chest: it is fixed on the click, the player is not blamed. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onStorageClick(InventoryClickEvent event) {
+        if (!plugin.settings().illegalEnabled || event instanceof InventoryCreativeEvent
+            || event.getClickedInventory() == null || !event.getClickedInventory().equals(event.getView().getTopInventory())
+            || !ItemFingerprints.isRealStorage(event.getClickedInventory())) {
+            return;
+        }
+        plugin.safety().run("anti-dupe", () -> {
+            ItemStack current = event.getCurrentItem();
+            if (current == null || current.isEmpty()) {
+                return;
+            }
+            ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(current);
+            if (result.changed()) {
+                event.setCurrentItem(result.item());
+            }
+        });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onOpen(InventoryOpenEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        Inventory top = event.getInventory();
+        if (!ItemFingerprints.isRealStorage(top)) {
+            return;
+        }
+        plugin.safety().run("anti-dupe", () -> {
+            fixOverstacked(player, top, "opened container");
+            if (!isCreative(player)) {
+                java.util.List<String> fixes = plugin.fingerprints().sanitizeInventory(top);
+                if (!fixes.isEmpty()) {
+                    plugin.violations().dupeAlert(player.getName(), "opened a container with illegal item(s), fixed"
+                        + " (not blamed): " + String.join("; ", fixes));
+                }
+            }
+            plugin.fingerprints().snapshotOpen(player, top);
+        });
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -158,9 +294,11 @@ public final class DupeListener implements Listener, Runnable {
                 return;
             }
             fixOverstacked(player, player.getInventory(), "inventory");
-            if (ItemFingerprints.isStorage(top)) {
+            if (ItemFingerprints.isRealStorage(top)) {
                 fixOverstacked(player, top, "closed container");
             }
+            // First what went in and out of the container (honest moves), then the scan that judges.
+            plugin.fingerprints().recordPlacement(player, top);
             plugin.fingerprints().scan(player, top);
         }));
     }
@@ -168,13 +306,13 @@ public final class DupeListener implements Listener, Runnable {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        Bukkit.getScheduler().runTaskLater(plugin, () -> plugin.safety().run("anti-dupe", () -> {
             if (player.isOnline()) {
                 fixOverstacked(player, player.getInventory(), "inventory");
                 fixOverstacked(player, player.getEnderChest(), "ender chest");
                 plugin.fingerprints().scan(player, null);
             }
-        }, 40L);
+        }), 40L);
     }
 
     /** Periodic scan of every online player, spread over ticks (2 players per tick) to avoid a lag spike. */
@@ -204,6 +342,10 @@ public final class DupeListener implements Listener, Runnable {
             plugin.violations().dupeAlert(player.getName(), "overstacked " + typeName(item) + " in " + where
                 + " (" + original + " > " + item.getMaxStackSize() + ", trimmed)");
         }
+    }
+
+    private static boolean isCreative(Player player) {
+        return player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR;
     }
 
     private static String typeName(ItemStack item) {

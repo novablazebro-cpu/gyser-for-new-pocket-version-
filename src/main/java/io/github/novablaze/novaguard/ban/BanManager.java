@@ -7,6 +7,7 @@ import io.github.novablaze.novaguard.core.AltTracker;
 import io.github.novablaze.novaguard.core.BedrockDetector;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.math.MonitorVerdict;
+import io.github.novablaze.novaguard.math.PunishmentLadder;
 import io.github.novablaze.novaguard.monitor.MonitorManager;
 import io.papermc.paper.ban.BanListType;
 import java.io.File;
@@ -82,14 +83,21 @@ public final class BanManager implements Runnable, Listener {
         public final long requestedMs;
         public final List<String> ips;
         public final List<UUID> alts;
+        /** Length of the account ban (and of the IP ban if approved); 0 = permanent. */
+        public final long days;
+        /** 2 = the player's 2nd NovaGuard ban, etc. */
+        public final int banNumber;
 
-        Approval(UUID uuid, String name, String reason, long requestedMs, List<String> ips, List<UUID> alts) {
+        Approval(UUID uuid, String name, String reason, long requestedMs, List<String> ips, List<UUID> alts,
+                 long days, int banNumber) {
             this.uuid = uuid;
             this.name = name;
             this.reason = reason;
             this.requestedMs = requestedMs;
             this.ips = ips;
             this.alts = alts;
+            this.days = days;
+            this.banNumber = banNumber;
         }
     }
 
@@ -222,42 +230,81 @@ public final class BanManager implements Runnable, Listener {
     }
 
     private void execute(Pending entry) {
-        Settings settings = plugin.settings();
         pending.remove(entry.uuid);
         save();
-        Duration duration = settings.banDurationDays > 0 ? Duration.ofDays(settings.banDurationDays) : null;
-        String reason = settings.banReason;
+        executeBan(entry.uuid, entry.name, entry.reason, entry.report, "cheating", plugin.settings().banReason);
+    }
+
+    /**
+     * Bans a player now for dupes / illegal items (the player was warned before, so no hidden ban wave).
+     * Runs on the next tick: the caller may be in the middle of scanning this player's inventory.
+     */
+    public void banNow(UUID uuid, String name, String evidence, String report, String kind) {
+        Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("ban-waves", () -> {
+            Pending queued = pending.remove(uuid);
+            if (queued != null) {
+                save();
+                historyLine("QUEUED ban of " + name + " replaced by an immediate ban (" + kind + ")");
+            }
+            executeBan(uuid, name, evidence, report == null ? "" : report, kind, plugin.settings().dupeBanReason);
+        }));
+    }
+
+    /** "1st ban, 3 days" for the next ban of this player (used in reports). */
+    public String describeNextBan(UUID uuid) {
+        Settings settings = plugin.settings();
+        int previous = plugin.offenses().banCount(uuid, settings.rememberBansDays, System.currentTimeMillis());
+        long days = PunishmentLadder.banDays(settings.banDays, previous);
+        return PunishmentLadder.ordinal(previous + 1) + " ban, " + (days == 0 ? "permanent" : days + " days");
+    }
+
+    /**
+     * One ban. Its length follows the ladder (3, 10, 30 days by default) by how often NovaGuard banned this
+     * player before. From the configured ban number on, an admin is asked whether the IP should be banned too.
+     */
+    private void executeBan(UUID uuid, String name, String evidence, String report, String kind, String publicReason) {
+        Settings settings = plugin.settings();
+        long now = System.currentTimeMillis();
+        int previous = plugin.offenses().banCount(uuid, settings.rememberBansDays, now);
+        int banNumber = previous + 1;
+        long days = PunishmentLadder.banDays(settings.banDays, previous);
+        Duration duration = days > 0 ? Duration.ofDays(days) : null;
+        String length = days > 0 ? days + " days" : "permanently";
+        String reason = publicReason + (days > 0 ? " - " + days + " days" : "");
         List<String> done = new ArrayList<>();
 
-        banAccount(entry.uuid, reason, duration);
-        done.add("account " + entry.name);
+        banAccount(uuid, reason, duration);
+        plugin.offenses().recordBan(uuid, name, now, days, kind);
+        plugin.offenses().clearStrikes(uuid);
+        done.add("account " + name);
 
-        List<String> ips = settings.banIp ? banIps(entry.uuid, done) : List.of();
-        List<UUID> altAccounts = settings.banAlts ? banAlts(entry.uuid) : List.of();
+        boolean askIp = settings.banIp && PunishmentLadder.asksForIpBan(banNumber, settings.ipBanFromBan);
+        List<String> ips = askIp ? banIps(uuid, done) : List.of();
+        List<UUID> altAccounts = askIp && settings.banAlts ? banAlts(uuid) : List.of();
         if (settings.ipBanApproval && (!ips.isEmpty() || !altAccounts.isEmpty())) {
             // An IP ban can hit innocent people on the same Wi-Fi: only an admin may approve it.
-            Approval approval = new Approval(entry.uuid, entry.name, entry.reason, System.currentTimeMillis(),
-                ips, altAccounts);
-            approvals.put(entry.uuid, approval);
+            Approval approval = new Approval(uuid, name, evidence, now, ips, altAccounts, days, banNumber);
+            approvals.put(uuid, approval);
             saveApprovals();
-            done.add("IP/alt ban WAITING FOR ADMIN APPROVAL (/ng approve " + entry.name + ")");
-            historyLine("APPROVAL NEEDED " + entry.name + ": " + scope(approval));
+            done.add("IP/alt ban WAITING FOR ADMIN APPROVAL (/ng approve " + name + ")");
+            historyLine("APPROVAL NEEDED " + name + ": " + scope(approval));
             redAlert(approval);
-            lastReminderMs = System.currentTimeMillis();
+            lastReminderMs = now;
         } else {
-            applyIpAndAlts(entry.name, ips, altAccounts, reason, duration, done);
+            applyIpAndAlts(name, ips, altAccounts, reason, duration, done);
         }
 
-        String summary = entry.name + " banned " + (duration == null ? "permanently" : "for "
-            + settings.banDurationDays + " days") + ": " + String.join(", ", done);
-        historyLine("BANNED " + summary + " | evidence: " + entry.reason);
-        plugin.getLogger().warning("Ban wave: " + summary);
-        staffMessage("[NovaGuard] Ban wave: " + summary + ". Report: plugins/NovaGuard/reports/" + entry.report);
+        String summary = name + " banned " + (days > 0 ? "for " + length : length) + " ("
+            + PunishmentLadder.ordinal(banNumber) + " NovaGuard ban, " + kind + "): " + String.join(", ", done);
+        historyLine("BANNED " + summary + " | evidence: " + evidence);
+        plugin.getLogger().warning("Ban: " + summary);
+        staffMessage("[NovaGuard] Ban: " + summary + (report.isEmpty() ? "" : ". Report: plugins/NovaGuard/reports/" + report));
         if (settings.notifyBanned) {
-            plugin.notifier().send("NovaGuard: " + entry.name + " banned", summary + "\nEvidence: " + entry.reason
-                + "\nUndo: pardon " + entry.name + (settings.banIp ? " and pardon-ip <address>" : "")
-                + (approvals.containsKey(entry.uuid) ? "\nThe IP ban waits for you: type 'ng approve "
-                + entry.name + "' or 'ng deny " + entry.name + "' in the console." : ""));
+            plugin.notifier().send("NovaGuard: " + name + " banned", summary + "\nEvidence: " + evidence
+                + (report.isEmpty() ? "" : "\nReport: plugins/NovaGuard/reports/" + report)
+                + "\nUndo: pardon " + name
+                + (approvals.containsKey(uuid) ? "\nThe IP ban waits for you: type 'ng approve "
+                + name + "' or 'ng deny " + name + "' in the console." : ""));
         }
     }
 
@@ -322,9 +369,10 @@ public final class BanManager implements Runnable, Listener {
         approvals.remove(approval.uuid);
         saveApprovals();
         Settings settings = plugin.settings();
-        Duration duration = settings.banDurationDays > 0 ? Duration.ofDays(settings.banDurationDays) : null;
+        Duration duration = approval.days > 0 ? Duration.ofDays(approval.days) : null;
         List<String> done = new ArrayList<>();
-        applyIpAndAlts(approval.name, approval.ips, approval.alts, settings.banReason, duration, done);
+        applyIpAndAlts(approval.name, approval.ips, approval.alts, settings.banReason
+            + (approval.days > 0 ? " - " + approval.days + " days" : ""), duration, done);
         String summary = String.join(", ", done);
         historyLine("APPROVED by " + admin + " for " + approval.name + ": " + summary);
         plugin.getLogger().warning("IP ban approved by " + admin + " for " + approval.name + ": " + summary);
@@ -358,14 +406,11 @@ public final class BanManager implements Runnable, Listener {
 
     /** Once the account ban is over, an IP ban for it makes no sense any more. */
     private void expireApprovals(long now) {
-        long days = plugin.settings().banDurationDays;
-        if (days <= 0) {
-            return;
-        }
         boolean changed = approvals.values().removeIf(approval -> {
-            boolean old = now - approval.requestedMs >= days * DAY_MS;
+            boolean old = approval.days > 0 && now - approval.requestedMs >= approval.days * DAY_MS;
             if (old) {
-                historyLine("EXPIRED IP approval for " + approval.name + " (nobody approved it in " + days + " days)");
+                historyLine("EXPIRED IP approval for " + approval.name + " (nobody approved it in "
+                    + approval.days + " days)");
             }
             return old;
         });
@@ -384,9 +429,15 @@ public final class BanManager implements Runnable, Listener {
 
     /** Red lines in the console (SEVERE log level) and for online admins. */
     private void redAlert(Approval approval) {
+        int before = approval.banNumber - 1;
         String[] lines = {
             "=================== NOVAGUARD: IP BAN NEEDS APPROVAL ===================",
-            approval.name + " is banned (their own account). Should their IP be banned too?",
+            before > 0
+                ? approval.name + " keeps cheating/duping after being banned " + before + " time(s) before. This is"
+                    + " their " + PunishmentLadder.ordinal(approval.banNumber) + " ban ("
+                    + (approval.days > 0 ? approval.days + " days" : "permanent") + ", their own account is banned)."
+                : approval.name + " is banned (their own account).",
+            "Should their IP be banned too?",
             "It would ban: " + scope(approval),
             "Evidence: " + approval.reason,
             "Check first: are the other accounts family or friends on the same Wi-Fi?",
@@ -435,15 +486,17 @@ public final class BanManager implements Runnable, Listener {
     private String banScopeText(UUID uuid) {
         Settings settings = plugin.settings();
         AltTracker alts = plugin.alts();
-        StringBuilder text = new StringBuilder("The ban will cover: this account");
-        if (settings.banIp && !alts.ipsOf(uuid).isEmpty()) {
+        int banNumber = plugin.offenses().banCount(uuid, settings.rememberBansDays, System.currentTimeMillis()) + 1;
+        boolean askIp = settings.banIp && PunishmentLadder.asksForIpBan(banNumber, settings.ipBanFromBan);
+        StringBuilder text = new StringBuilder("The ban will cover: this account (" + describeNextBan(uuid) + ")");
+        if (askIp && !alts.ipsOf(uuid).isEmpty()) {
             text.append(", ").append(alts.ipsOf(uuid).size()).append(" IP address(es)");
             if (settings.ipBanApproval) {
                 text.append(" (only after an admin approves it)");
             }
         }
         // An IP ban locks out every account on that IP, so list them even when alts are not banned by name.
-        if ((settings.banAlts || settings.banIp) && !alts.altsOf(uuid).isEmpty()) {
+        if (askIp && (settings.banAlts || settings.banIp) && !alts.altsOf(uuid).isEmpty()) {
             List<String> names = new ArrayList<>();
             alts.altsOf(uuid).stream().filter(alt -> !BedrockDetector.isFloodgateUuid(alt))
                 .forEach(alt -> names.add(alts.nameOf(alt)));
@@ -520,7 +573,8 @@ public final class BanManager implements Runnable, Listener {
                     altList.add(UUID.fromString(alt));
                 }
                 approvals.put(uuid, new Approval(uuid, s.getString("name", key), s.getString("reason", ""),
-                    s.getLong("requested"), new ArrayList<>(s.getStringList("ips")), altList));
+                    s.getLong("requested"), new ArrayList<>(s.getStringList("ips")), altList,
+                    s.getLong("days", 30), s.getInt("ban-number", 1)));
             } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Skipping bad entry in ip-approvals.yml: " + key);
             }
@@ -544,6 +598,8 @@ public final class BanManager implements Runnable, Listener {
             s.set("requested", approval.requestedMs);
             s.set("ips", approval.ips);
             s.set("alts", approval.alts.stream().map(UUID::toString).toList());
+            s.set("days", approval.days);
+            s.set("ban-number", approval.banNumber);
         }
         try {
             Files.createDirectories(approvalsFile.getParentFile().toPath());

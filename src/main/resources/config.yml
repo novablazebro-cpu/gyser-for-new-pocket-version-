@@ -148,8 +148,9 @@ ban-waves:
   # The ban happens a random time between these after confirmation. Staff can cancel: /ng bans cancel <name>
   delay-min-hours: 24
   delay-max-hours: 72
-  duration-days: 30
-  # Also ban the IP addresses the cheater used (careful: family on the same Wi-Fi is banned too).
+  # How long bans last: see punishments.ban-days below (3, then 10, then 30 days).
+  # Allow IP bans at all (careful: family on the same Wi-Fi is banned too). When they are proposed: see
+  # punishments.ip-ban-from-ban below.
   ip-ban: true
   # Also ban other accounts that joined from the same IP addresses (see alts below).
   ban-alts: true
@@ -159,6 +160,16 @@ ban-waves:
   # If nobody decides before the account ban ends (duration-days), the request expires and nothing happens.
   ip-ban-approval: true
   reason: "Cheating (NovaGuard)"
+
+punishments:
+  # Every NovaGuard ban (cheating, duping, illegal items) is longer than the one before:
+  # 1st ban 3 days, 2nd ban 10 days, 3rd and later 30 days. 0 = permanent.
+  ban-days: [3, 10, 30]
+  # From this ban on (2 = the player is banned again after an earlier ban), an admin is asked whether the IP
+  # should be banned too. The red console alert says how often the player was banned before. 0 = never ask.
+  ip-ban-from-ban: 2
+  # Only bans of the last N days count for the ladder above (0 = forever).
+  remember-bans-days: 365
 
 alts:
   # Remember which accounts join from which IP address (stored in plugins/NovaGuard/alts.yml).
@@ -201,11 +212,13 @@ anti-dupe:
   entity-container-guard: true
   fingerprints:
     enabled: true
-    # Delete the extra copy of a duplicated item (only when both copies are in the same scan).
-    # Off by default: deleting a real item by mistake is worse than missing a dupe.
-    remove-duplicates: false
+    # Remove the extra copy of a duplicated item right away. Exactly one copy always stays.
+    undo-dupes: true
     scan-interval-seconds: 60
-    # Only unstackable items from this list get a hidden ID.
+    # Also give a hidden ID to every unstackable enchanted item and every enchanted book (Mending books...).
+    tag-enchanted-items: true
+    # These unstackable items always get a hidden ID. Stackable items (diamonds...) cannot get one: all copies
+    # of a stack are identical, so a duped diamond can never be told apart from a mined one.
     materials:
       - ELYTRA
       - TOTEM_OF_UNDYING
@@ -238,3 +251,48 @@ anti-dupe:
       - GREEN_SHULKER_BOX
       - RED_SHULKER_BOX
       - BLACK_SHULKER_BOX
+  # What happens to the player after a dupe was undone. A player is only warned when the copy can only have
+  # come from them (see the README: "Who gets blamed"). Unclear cases are undone without a warning.
+  punish:
+    enabled: true
+    # Warnings before the ban: "Warning 1/5" ... more than max-warnings = banned at once (ban length: punishments).
+    max-warnings: 5
+    # Warnings closer together than this count as one (one exploit often shows up in several scans).
+    warning-cooldown-seconds: 60
+    # The first warning also puts the player on the suspect list for monitor.duration-hours (3 days).
+    # true = a second warning during that watch bans them when the watch ends. No repeat = removed from the
+    # list and their warnings are cleared.
+    ban-on-repeat: true
+    # After a crash (or the panel's Kill button) the world and the players are saved at different moments, which
+    # copies items by itself. Copies of items older than the crash are removed, but nobody is warned for this long.
+    crash-grace-hours: 72
+    # If this many different players "dupe" within mass-dupe-minutes, it is a rollback or another plugin copying
+    # items, not cheaters: their warnings are taken back and warnings pause for mass-dupe-pause-hours.
+    mass-dupe-players: 3
+    mass-dupe-minutes: 10
+    mass-dupe-pause-hours: 24
+    # Also warn and ban Bedrock (Geyser) players for dupes. Item evidence does not depend on the client, unlike
+    # movement checks. IP bans of Bedrock players are still never proposed.
+    bedrock: true
+    warn-message: "<red><bold>Duping detected!</bold> The duplicated item was removed. Warning <count>/<max>. More than <max> warnings = automatic ban.</red>"
+    removed-message: "<yellow>A duplicate copy of an item was removed (another copy of the same item exists). This is not counted as a warning.</yellow>"
+    ban-reason: "Duping / illegal items (NovaGuard)"
+
+illegal-items:
+  # Fixes items that are impossible in survival: enchantments above their maximum level (Sharpness 10),
+  # enchantments that exclude each other (Density + Breach), enchantments on items that cannot have them
+  # (Knockback on a stick). The rules come from the server itself, so they always match vanilla exactly.
+  # Note: Breach + Wind Burst on a mace IS legal in vanilla and is left alone.
+  enabled: true
+  # Unbreakable cannot be obtained in survival.
+  remove-unbreakable: true
+  # Remove custom attribute modifiers (e.g. +1000 attack damage). Off by default: some plugins use them.
+  remove-custom-attributes: false
+  # Leave items alone that carry another plugin's data (custom enchant, crate, custom item plugins).
+  # Set to false if your illegal items come from a plugin you no longer want.
+  skip-plugin-items: true
+  # An illegal item that appears in a player's own inventory (not picked up, not from a chest) puts them on the
+  # suspect list. It is never a warning or a ban by itself: it could come from a trade/auction/crate plugin.
+  # A warning is only given when a checked, legal item became illegal in the player's own inventory.
+  suspect: true
+  fixed-message: "<yellow>An item had enchantments that are impossible in survival and was fixed: <changes></yellow>"

@@ -14,6 +14,11 @@ import org.bukkit.configuration.ConfigurationSection;
 public final class MonitorRecord {
 
     private static final int MAX_BRANDS = 5;
+    private static final int MAX_ITEM_EVENTS = 100;
+
+    /** A dupe or illegal item that was undone. {@code strong} = it can only have come from this player. */
+    public record ItemEvent(long timeMs, boolean strong, String text) {
+    }
 
     public final UUID uuid;
     public String name;
@@ -44,6 +49,9 @@ public final class MonitorRecord {
     public int strongSessions;
     public int lastStrongSession;
     public final RotationAnalysis rotation = new RotationAnalysis();
+    /** Put on the suspect list because of dupes / illegal items (not only by staff or a cheat check). */
+    public boolean itemWatch;
+    public final java.util.List<ItemEvent> itemEvents = new java.util.ArrayList<>();
 
     // Not saved: the attack counter of the current second.
     long currentSecond = -1;
@@ -69,6 +77,33 @@ public final class MonitorRecord {
             cps.add(attacksThisSecond);
         }
         attacksThisSecond = 0;
+    }
+
+    void addItemEvent(long timeMs, boolean strong, String text) {
+        if (itemEvents.size() >= MAX_ITEM_EVENTS) {
+            // Keep the strong ones: they decide about the ban.
+            for (int i = 0; i < itemEvents.size(); i++) {
+                if (!itemEvents.get(i).strong()) {
+                    itemEvents.remove(i);
+                    break;
+                }
+            }
+            if (itemEvents.size() >= MAX_ITEM_EVENTS) {
+                itemEvents.remove(0);
+            }
+        }
+        itemEvents.add(new ItemEvent(timeMs, strong, text.length() > 300 ? text.substring(0, 297) + "..." : text));
+    }
+
+    /** Strong dupe / illegal-item incidents (each one also gave a warning). */
+    public int strongItemIncidents() {
+        int count = 0;
+        for (ItemEvent event : itemEvents) {
+            if (event.strong()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     void addBrand(String brand) {
@@ -123,6 +158,12 @@ public final class MonitorRecord {
             turns.add(turn);
         }
         s.set("rotation", turns);
+        s.set("item-watch", itemWatch);
+        java.util.List<String> events = new java.util.ArrayList<>();
+        for (ItemEvent event : itemEvents) {
+            events.add(event.timeMs() + ";" + (event.strong() ? "1" : "0") + ";" + event.text());
+        }
+        s.set("item-events", events);
         for (CheckType type : CheckType.values()) {
             s.set("flags." + type.name(), flags[type.ordinal()]);
             s.set("near-misses." + type.name(), nearMisses[type.ordinal()]);
@@ -149,6 +190,17 @@ public final class MonitorRecord {
         r.dupeAlerts = s.getInt("dupe-alerts");
         r.strongSessions = s.getInt("strong-sessions");
         r.lastStrongSession = s.getInt("last-strong-session");
+        r.itemWatch = s.getBoolean("item-watch");
+        for (String line : s.getStringList("item-events")) {
+            String[] parts = line.split(";", 3);
+            if (parts.length == 3) {
+                try {
+                    r.itemEvents.add(new ItemEvent(Long.parseLong(parts[0]), parts[1].equals("1"), parts[2]));
+                } catch (NumberFormatException ignored) {
+                    // Skip a damaged line.
+                }
+            }
+        }
         r.rotation.restore(s.getDoubleList("rotation").stream().mapToDouble(Double::doubleValue).toArray());
         for (CheckType type : CheckType.values()) {
             r.flags[type.ordinal()] = s.getInt("flags." + type.name());

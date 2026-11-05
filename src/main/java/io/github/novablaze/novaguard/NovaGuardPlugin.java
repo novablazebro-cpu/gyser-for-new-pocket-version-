@@ -1,6 +1,9 @@
 package io.github.novablaze.novaguard;
 
 import io.github.novablaze.novaguard.ban.BanManager;
+import io.github.novablaze.novaguard.ban.OffenseLog;
+import io.github.novablaze.novaguard.core.ServerState;
+import io.github.novablaze.novaguard.dupe.ItemPunisher;
 import io.github.novablaze.novaguard.combat.BlockReachListener;
 import io.github.novablaze.novaguard.combat.CombatListener;
 import io.github.novablaze.novaguard.core.AltTracker;
@@ -40,6 +43,9 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private Notifier notifier;
     private AltTracker alts;
     private BanManager bans;
+    private OffenseLog offenses;
+    private ServerState serverState;
+    private ItemPunisher itemPunisher;
     private FlagRateStats flagStats;
     private DupeListener dupeListener;
     private BukkitTask fingerprintTask;
@@ -47,6 +53,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        addMissingConfigOptions();
         settings = new Settings(getConfig(), getLogger());
         safety = new Safety(this);
         notifier = new Notifier(this);
@@ -58,6 +65,10 @@ public final class NovaGuardPlugin extends JavaPlugin {
         exemptions = new Exemptions(this);
         fingerprints = new ItemFingerprints(this);
         monitor = new MonitorManager(this);
+        offenses = new OffenseLog(this);
+        serverState = new ServerState(this);
+        serverState.start(System.currentTimeMillis());
+        itemPunisher = new ItemPunisher(this);
         bans = new BanManager(this);
 
         MovementListener movement = new MovementListener(this);
@@ -76,6 +87,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("monitor", monitor), 1200L, 1200L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("ban-waves", bans), 1200L, 1200L);
         Bukkit.getScheduler().runTaskTimer(this, () -> alts.save(), 6000L, 6000L);
+        Bukkit.getScheduler().runTaskTimer(this, () -> fingerprints.cleanup(System.currentTimeMillis()), 72000L, 72000L);
         scheduleFingerprintScans();
 
         // Players already online (after /reload or a plugin manager reload).
@@ -110,6 +122,37 @@ public final class NovaGuardPlugin extends JavaPlugin {
         if (violations != null) {
             violations.shutdown();
         }
+        if (offenses != null) {
+            offenses.save();
+        }
+        if (serverState != null) {
+            // Last: a clean shutdown. If this line never runs (crash, kill), the next start knows it.
+            serverState.stop();
+        }
+    }
+
+    /**
+     * Servers updating from an older NovaGuard keep their config.yml, which lacks the new sections. Adds the
+     * missing options (with their default values) so admins can see and change them; existing values stay.
+     */
+    private void addMissingConfigOptions() {
+        org.bukkit.configuration.Configuration defaults = getConfig().getDefaults();
+        if (defaults == null) {
+            return;
+        }
+        List<String> missing = new java.util.ArrayList<>();
+        for (String key : defaults.getKeys(true)) {
+            if (!defaults.isConfigurationSection(key) && !getConfig().isSet(key)) {
+                missing.add(key);
+            }
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+        getConfig().options().copyDefaults(true);
+        saveConfig();
+        getLogger().info("Added " + missing.size() + " new option(s) to config.yml with their default values"
+            + " (e.g. " + String.join(", ", missing.subList(0, Math.min(5, missing.size()))) + ").");
     }
 
     public void reloadSettings() {
@@ -170,6 +213,18 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public BanManager bans() {
         return bans;
+    }
+
+    public OffenseLog offenses() {
+        return offenses;
+    }
+
+    public ServerState serverState() {
+        return serverState;
+    }
+
+    public ItemPunisher itemPunisher() {
+        return itemPunisher;
     }
 
     public FlagRateStats flagStats() {

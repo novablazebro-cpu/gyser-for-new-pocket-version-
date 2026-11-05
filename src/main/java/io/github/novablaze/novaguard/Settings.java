@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard;
 
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -69,11 +70,15 @@ public final class Settings {
     public final int banMinSessions;
     public final long banDelayMinMs;
     public final long banDelayMaxMs;
-    public final long banDurationDays;
     public final boolean banIp;
     public final boolean banAlts;
     public final boolean ipBanApproval;
     public final String banReason;
+
+    /** Ban length in days for the 1st, 2nd, 3rd... NovaGuard ban (last value repeats). */
+    public final List<Long> banDays;
+    public final int ipBanFromBan;
+    public final long rememberBansDays;
 
     public final boolean altsEnabled;
     public final int altsMaxAccountsPerIp;
@@ -102,9 +107,31 @@ public final class Settings {
     public final boolean fixOverstacked;
     public final boolean entityContainerGuard;
     public final boolean fingerprintsEnabled;
-    public final boolean removeDuplicates;
+    public final boolean undoDupes;
+    public final boolean tagEnchanted;
     public final long fingerprintScanTicks;
     public final Set<Material> fingerprintMaterials;
+
+    public final boolean punishEnabled;
+    public final int maxWarnings;
+    public final long strikeCooldownMs;
+    public final long crashGraceMs;
+    public final boolean punishBedrock;
+    public final int massDupePlayers;
+    public final long massDupeWindowMs;
+    public final long massDupePauseMs;
+    public final String dupeWarnMessage;
+    public final String dupeRemovedMessage;
+    public final String dupeBanReason;
+    public final boolean itemBanOnRepeat;
+
+    public final boolean illegalEnabled;
+    public final boolean illegalRemoveUnbreakable;
+    public final boolean illegalRemoveAttributes;
+    public final boolean illegalSkipPluginItems;
+    public final boolean illegalSuspect;
+    public final String illegalFixedMessage;
+    public final String illegalBanReason;
 
     public Settings(FileConfiguration c, Logger logger) {
         alertCooldownMs = Math.max(0, c.getLong("alerts.cooldown-ms", 1500));
@@ -165,11 +192,25 @@ public final class Settings {
         long maxHours = Math.max(minHours, c.getLong("ban-waves.delay-max-hours", 72));
         banDelayMinMs = minHours * 3_600_000L;
         banDelayMaxMs = maxHours * 3_600_000L;
-        banDurationDays = Math.max(0, c.getLong("ban-waves.duration-days", 30));
         banIp = c.getBoolean("ban-waves.ip-ban", true);
         banAlts = c.getBoolean("ban-waves.ban-alts", true);
         ipBanApproval = c.getBoolean("ban-waves.ip-ban-approval", true);
         banReason = c.getString("ban-waves.reason", "Cheating (NovaGuard)");
+
+        List<Long> days = new java.util.ArrayList<>();
+        for (Object value : c.getList("punishments.ban-days", List.of(3, 10, 30))) {
+            try {
+                days.add(Math.max(0, Long.parseLong(String.valueOf(value).trim())));
+            } catch (NumberFormatException e) {
+                logger.warning("punishments.ban-days: '" + value + "' is not a number of days, skipped.");
+            }
+        }
+        if (days.isEmpty()) {
+            days = List.of(3L, 10L, 30L);
+        }
+        banDays = List.copyOf(days);
+        ipBanFromBan = Math.max(0, c.getInt("punishments.ip-ban-from-ban", 2));
+        rememberBansDays = Math.max(0, c.getLong("punishments.remember-bans-days", 365));
 
         altsEnabled = c.getBoolean("alts.enabled", true);
         altsMaxAccountsPerIp = Math.max(1, c.getInt("alts.max-accounts-per-ip", 5));
@@ -199,7 +240,9 @@ public final class Settings {
         fixOverstacked = c.getBoolean("anti-dupe.fix-overstacked", true);
         entityContainerGuard = c.getBoolean("anti-dupe.entity-container-guard", true);
         fingerprintsEnabled = c.getBoolean("anti-dupe.fingerprints.enabled", true);
-        removeDuplicates = c.getBoolean("anti-dupe.fingerprints.remove-duplicates", false);
+        // New key on purpose: old configs say "remove-duplicates: false", which must not switch undoing off.
+        undoDupes = c.getBoolean("anti-dupe.fingerprints.undo-dupes", true);
+        tagEnchanted = c.getBoolean("anti-dupe.fingerprints.tag-enchanted-items", true);
         fingerprintScanTicks = Math.max(10, c.getLong("anti-dupe.fingerprints.scan-interval-seconds", 60)) * 20L;
         fingerprintMaterials = EnumSet.noneOf(Material.class);
         for (String name : c.getStringList("anti-dupe.fingerprints.materials")) {
@@ -210,6 +253,32 @@ public final class Settings {
                 fingerprintMaterials.add(material);
             }
         }
+        punishEnabled = c.getBoolean("anti-dupe.punish.enabled", true);
+        maxWarnings = Math.max(1, c.getInt("anti-dupe.punish.max-warnings", 5));
+        strikeCooldownMs = Math.max(0, c.getLong("anti-dupe.punish.warning-cooldown-seconds", 60)) * 1000L;
+        crashGraceMs = Math.max(0, c.getLong("anti-dupe.punish.crash-grace-hours", 72)) * 3_600_000L;
+        punishBedrock = c.getBoolean("anti-dupe.punish.bedrock", true);
+        massDupePlayers = Math.max(2, c.getInt("anti-dupe.punish.mass-dupe-players", 3));
+        massDupeWindowMs = Math.max(1, c.getLong("anti-dupe.punish.mass-dupe-minutes", 10)) * 60_000L;
+        massDupePauseMs = Math.max(1, c.getLong("anti-dupe.punish.mass-dupe-pause-hours", 24)) * 3_600_000L;
+        dupeWarnMessage = c.getString("anti-dupe.punish.warn-message",
+            "<red><bold>Duping detected!</bold> The duplicated item was removed. Warning <count>/<max>."
+                + " More than <max> warnings = automatic ban.</red>");
+        dupeRemovedMessage = c.getString("anti-dupe.punish.removed-message",
+            "<yellow>A duplicate copy of an item was removed (another copy of the same item exists)."
+                + " This is not counted as a warning.</yellow>");
+        dupeBanReason = c.getString("anti-dupe.punish.ban-reason", "Duping / illegal items (NovaGuard)");
+        itemBanOnRepeat = c.getBoolean("anti-dupe.punish.ban-on-repeat", true);
+
+        illegalEnabled = c.getBoolean("illegal-items.enabled", true);
+        illegalRemoveUnbreakable = c.getBoolean("illegal-items.remove-unbreakable", true);
+        illegalRemoveAttributes = c.getBoolean("illegal-items.remove-custom-attributes", false);
+        illegalSkipPluginItems = c.getBoolean("illegal-items.skip-plugin-items", true);
+        illegalSuspect = c.getBoolean("illegal-items.suspect", true);
+        illegalFixedMessage = c.getString("illegal-items.fixed-message",
+            "<yellow>An item had enchantments that are impossible in survival and was fixed: <changes></yellow>");
+        illegalBanReason = dupeBanReason;
+
         ConfigurationSection unused = c.getConfigurationSection("checks");
         if (unused == null) {
             logger.warning("config.yml has no 'checks' section, using defaults.");
