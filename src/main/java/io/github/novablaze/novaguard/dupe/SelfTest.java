@@ -15,8 +15,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import org.bukkit.BanList;
+import com.destroystokyo.paper.profile.PlayerProfile;
 import org.bukkit.Bukkit;
+import org.bukkit.ban.IpBanList;
+import org.bukkit.ban.ProfileBanList;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.Inventory;
@@ -200,9 +202,9 @@ final class SelfTest {
     /** Bans a made-up account and a documentation-only IP (203.0.113.x), lifts both, and cleans up. */
     private String unbanWorks() {
         UUID fake = new UUID(0x4E6F7661L, UUID.randomUUID().getLeastSignificantBits());
-        BanList<org.bukkit.profile.PlayerProfile> profiles = Bukkit.getBanList(BanListType.PROFILE);
-        BanList<InetAddress> ips = Bukkit.getBanList(BanListType.IP);
-        org.bukkit.profile.PlayerProfile profile = Bukkit.createProfile(fake, "NgSelfTest");
+        ProfileBanList profiles = Bukkit.getBanList(BanListType.PROFILE);
+        IpBanList ips = Bukkit.getBanList(BanListType.IP);
+        PlayerProfile profile = Bukkit.createProfile(fake, "NgSelfTest");
         InetAddress address;
         try {
             address = InetAddress.getByName("203.0.113.77");

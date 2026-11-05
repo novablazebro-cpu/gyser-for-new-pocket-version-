@@ -32,8 +32,8 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.BanList;
 import org.bukkit.Bukkit;
+import org.bukkit.ban.ProfileBanList;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -481,7 +481,7 @@ public final class BanManager implements Runnable, Listener {
 
     /** Lifts an account ban by UUID (BanList.pardon, as the Paper docs recommend). */
     public static void pardonAccount(UUID uuid, String name) {
-        BanList<org.bukkit.profile.PlayerProfile> profiles = Bukkit.getBanList(BanListType.PROFILE);
+        ProfileBanList profiles = Bukkit.getBanList(BanListType.PROFILE);
         profiles.pardon(Bukkit.createProfile(uuid, name));
     }
 
