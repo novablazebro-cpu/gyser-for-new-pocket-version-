@@ -11,6 +11,7 @@ import io.github.novablaze.novaguard.math.DupeBlame;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.function.BiFunction;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -307,6 +308,12 @@ public final class ItemFingerprints {
         if (!settings.undoDupes) {
             return Set.of();
         }
+        if (keepsCopies(player)) {
+            renew(toRemove, now);
+            plugin.violations().dupeAlert(player.getName(), "is staff (novaguard.dupe.exempt): the "
+                + toRemove.size() + " extra copies were KEPT and got new IDs instead of being removed");
+            return toRemove;
+        }
         remove(toRemove);
         if (ownCopyRemovedWithoutBlame) {
             tell(player, MiniMessage.miniMessage().deserialize(settings.dupeRemovedMessage));
@@ -365,6 +372,16 @@ public final class ItemFingerprints {
             history.add(mine.id(), "held by both " + player.getName() + " and " + other.getName() + " at once"
                 + (release == null ? "" : "; last given away by " + nameOf(release.player()))
                 + "; blamed: " + blamedName);
+            if (keepsCopies(player) || keepsCopies(other)) {
+                // A staff member is involved (creative clones, /give): nothing is removed, the copy is renewed.
+                if (keepsCopies(player)) {
+                    renew(Set.of(mine), now);
+                } else {
+                    renew(new HashSet<>(theirs), now);
+                }
+                plugin.violations().dupeAlert(player.getName(), text + ": staff is involved, both kept (new ID)");
+                continue;
+            }
             if (culprit != null && culprit.equals(previous.toString())) {
                 remove(new HashSet<>(theirs));
                 plugin.itemPunisher().strong(other, "dupe", "still had a " + mine.item() + " (ID " + shortId(mine.id())
@@ -539,10 +556,28 @@ public final class ItemFingerprints {
     private void retag(Inventory inventory, Set<Integer> busy, long now) {
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
-            if (item != null && !item.isEmpty() && !busy.contains(slot) && ids.read(item) != null) {
-                inventory.setItem(slot, ids.withId(item, UUID.randomUUID().toString(), now));
+            if (item == null || item.isEmpty() || busy.contains(slot)) {
+                continue;
+            }
+            boolean hadId = ids.read(item) != null;
+            ItemStack stripped = ids.strip(item);
+            if (hadId) {
+                inventory.setItem(slot, ids.withId(stripped, UUID.randomUUID().toString(), now));
+            } else if (stripped != item) {
+                // Only items inside shulkers/bundles had IDs: they get new ones when taken out.
+                inventory.setItem(slot, stripped);
             }
         }
+    }
+
+    /**
+     * Everything a player has gets a new identity (also inside shulkers). Used when a player leaves creative mode:
+     * anything they hold may be a creative clone of something that exists elsewhere, and that is not a dupe.
+     */
+    public void renewAll(Player player) {
+        long now = System.currentTimeMillis();
+        retag(player.getInventory(), Inventories.busySlots(player), now);
+        retag(player.getEnderChest(), Set.of(), now);
     }
 
     // ---------------------------------------------------------------- removing copies
@@ -552,6 +587,23 @@ public final class ItemFingerprints {
      * shifts the position of another copy that still has to be removed.
      */
     void remove(Set<Found> copies) {
+        rewrite(copies, (found, item) -> null);
+    }
+
+    /**
+     * Staff copies are kept: they get a new identity instead (a new ID at the top level; nested copies lose their
+     * ID and get a new one when they are taken out), so they no longer count as copies of each other.
+     */
+    private void renew(Set<Found> copies, long now) {
+        rewrite(copies, (found, item) -> found.path().length == 1
+            ? ids.withId(ids.strip(item), UUID.randomUUID().toString(), now) : ids.strip(item));
+    }
+
+    /**
+     * Replaces the given copies by {@code change(copy, item)}; null removes the item. Deeper and later positions go
+     * first, so removing an item from a bundle never shifts the position of another copy that is still to do.
+     */
+    private void rewrite(Set<Found> copies, BiFunction<Found, ItemStack, ItemStack> change) {
         List<Found> order = new ArrayList<>(copies);
         order.sort(Comparator.comparingInt((Found f) -> System.identityHashCode(f.inventory()))
             .thenComparing(Found::path, (a, b) -> Arrays.compare(b, a)));
@@ -561,9 +613,9 @@ public final class ItemFingerprints {
                 continue;
             }
             if (f.path().length == 1) {
-                f.inventory().setItem(f.path()[0], null);
+                f.inventory().setItem(f.path()[0], change.apply(f, top));
             } else {
-                ItemStack updated = removeAt(top, f.path(), 1);
+                ItemStack updated = rewriteAt(top, f, 1, change);
                 if (updated != null) {
                     f.inventory().setItem(f.path()[0], updated);
                 }
@@ -571,22 +623,32 @@ public final class ItemFingerprints {
         }
     }
 
-    private static ItemStack removeAt(ItemStack holder, int[] path, int index) {
+    private static ItemStack rewriteAt(ItemStack holder, Found found, int index,
+                                       BiFunction<Found, ItemStack, ItemStack> change) {
+        int[] path = found.path();
         List<ItemStack> children = ItemTree.children(holder);
         if (children == null || path[index] >= children.size()) {
             return null;
         }
+        ItemStack child = children.get(path[index]);
+        if (child == null || child.isEmpty()) {
+            return null;
+        }
         if (index == path.length - 1) {
-            children.set(path[index], null);
+            children.set(path[index], change.apply(found, child));
         } else {
-            ItemStack child = children.get(path[index]);
-            ItemStack updated = child == null ? null : removeAt(child, path, index + 1);
+            ItemStack updated = rewriteAt(child, found, index + 1, change);
             if (updated == null) {
                 return null;
             }
             children.set(path[index], updated);
         }
         return ItemTree.withChildren(holder, children);
+    }
+
+    /** Staff (novaguard.dupe.exempt) keep their copies: creative clones and /give items are not dupes. */
+    private boolean keepsCopies(Player player) {
+        return plugin.settings().staffKeepCopies && player.hasPermission("novaguard.dupe.exempt");
     }
 
     // ---------------------------------------------------------------- self-test
@@ -600,6 +662,10 @@ public final class ItemFingerprints {
         List<Found> found = new ArrayList<>();
         collect(inventory, "test", true, found, Set.of(), false, 0, "test");
         return found;
+    }
+
+    void renewForTest(Set<Found> copies) {
+        renew(copies, System.currentTimeMillis());
     }
 
     ItemStack taggedForTest(ItemStack item, String id) {

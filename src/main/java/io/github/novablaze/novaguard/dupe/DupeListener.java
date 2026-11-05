@@ -244,10 +244,14 @@ public final class DupeListener implements Listener, Runnable {
         GameMode to = event.getNewGameMode();
         boolean leavingCreative = (from == GameMode.CREATIVE || from == GameMode.SPECTATOR)
             && to != GameMode.CREATIVE && to != GameMode.SPECTATOR;
-        if (leavingCreative && plugin.settings().illegalEnabled) {
+        if (leavingCreative) {
             Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
                 if (player.isOnline()) {
-                    plugin.fingerprints().sanitizeSilently(player);
+                    // Creative clones are not dupes: everything gets a new ID, and illegal items are fixed.
+                    plugin.fingerprints().renewAll(player);
+                    if (plugin.settings().illegalEnabled) {
+                        plugin.fingerprints().sanitizeSilently(player);
+                    }
                 }
             }));
         }

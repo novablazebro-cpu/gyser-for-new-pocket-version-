@@ -279,6 +279,9 @@ anti-dupe:
     # Players with at least this many hours on the server are never banned for dupes by NovaGuard alone: the ban
     # waits for an admin (red console alert; ng bans now <name> / ng bans cancel <name>). 0 = off.
     review-above-hours: 50
+    # Staff (novaguard.dupe.exempt, default: ops) KEEP copies: they get new IDs instead of being removed.
+    # Creative clones and /give items are not dupes. Leaving creative mode also gives every item a new ID.
+    staff-keep-copies: true
     # Grave / death-chest plugins give items back on respawn in their own way: copies that appear this soon after
     # a respawn are removed, but never warned.
     respawn-grace-seconds: 30

@@ -63,6 +63,7 @@ final class SelfTest {
         }
         check("Duplicated items inside a shulker box are removed, the original stays", this::shulkerUndo);
         check("Duplicated item inside a bundle is removed", this::bundleUndo);
+        check("Staff copies (creative clones) are kept and get new IDs instead of being removed", this::staffKeep);
         check("Creative clones lose their hidden ID (also inside shulkers)", this::stripIds);
         check("Unban really lifts an account ban and an IP ban (fake test account)", this::unbanWorks);
         if (plugin.settings().illegalEnabled) {
@@ -170,6 +171,30 @@ final class SelfTest {
             return "the other items in the shulker were damaged: " + inside;
         }
         return null;
+    }
+
+    private String staffKeep() {
+        ItemStack elytra = tagged(ItemStack.of(Material.ELYTRA));
+        Inventory inventory = Bukkit.createInventory(null, 27);
+        inventory.setItem(0, elytra);
+        inventory.setItem(1, elytra.clone());
+        inventory.setItem(4, shulker(List.of(elytra.clone())));
+        List<ItemFingerprints.Found> found = fingerprints.collectForTest(inventory);
+        if (found.size() != 3) {
+            return "found " + found.size() + " copies instead of 3";
+        }
+        fingerprints.renewForTest(new HashSet<>(found.subList(1, 3)));
+        List<ItemFingerprints.Found> after = fingerprints.collectForTest(inventory);
+        if (inventory.getItem(1) == null || inventory.getItem(1).getType() != Material.ELYTRA) {
+            return "the second elytra was removed instead of kept";
+        }
+        List<ItemStack> inside = ItemTree.children(inventory.getItem(4));
+        if (inside == null || inside.isEmpty() || inside.get(0).getType() != Material.ELYTRA) {
+            return "the elytra inside the shulker was removed instead of kept";
+        }
+        java.util.Set<String> distinct = new HashSet<>();
+        after.forEach(f -> distinct.add(f.id()));
+        return distinct.size() == after.size() ? null : "copies still share an ID after renewing";
     }
 
     private String bundleUndo() {

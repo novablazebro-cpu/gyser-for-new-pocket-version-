@@ -3,6 +3,8 @@ package io.github.novablaze.novaguard.items;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.math.EnchantRules;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.ItemEnchantments;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -73,7 +75,7 @@ public final class ItemSanitizer {
         ItemStack out = item;
         boolean selfChanged = false;
         // Items made by other plugins (custom enchant / crate / custom item plugins) are theirs to manage.
-        if (!(settings.illegalSkipPluginItems && hasForeignData(item)) && item.hasItemMeta()) {
+        if (mightBeIllegal(item, settings) && !(settings.illegalSkipPluginItems && hasForeignData(item))) {
             ItemMeta meta = item.getItemMeta();
             boolean changed = false;
             if (meta instanceof EnchantmentStorageMeta book && book.hasStoredEnchants()) {
@@ -135,6 +137,26 @@ public final class ItemSanitizer {
             }
         }
         return changes.isEmpty() ? NOTHING : new Result(out, List.copyOf(changes), selfChanged);
+    }
+
+    /**
+     * Cheap first look (no ItemMeta copy): most items have no enchantments and no Unbreakable flag, so the full
+     * check is skipped for them. This keeps a scan of full shulker boxes fast.
+     */
+    private static boolean mightBeIllegal(ItemStack item, Settings settings) {
+        if (!item.hasItemMeta()) {
+            return false;
+        }
+        if (settings.illegalRemoveAttributes) {
+            return true; // Attribute modifiers can be on any item: always do the full check.
+        }
+        return hasAny(item.getData(DataComponentTypes.ENCHANTMENTS))
+            || hasAny(item.getData(DataComponentTypes.STORED_ENCHANTMENTS))
+            || settings.illegalRemoveUnbreakable && item.hasData(DataComponentTypes.UNBREAKABLE);
+    }
+
+    private static boolean hasAny(ItemEnchantments enchantments) {
+        return enchantments != null && !enchantments.enchantments().isEmpty();
     }
 
     private static EnchantRules.Fix rules(Map<Enchantment, Integer> enchants, ItemStack item, boolean book) {

@@ -126,6 +126,7 @@ public final class Settings {
     public final boolean itemBanOnRepeat;
     /** Test mode: dupes are still undone, but nobody is warned or banned; what would happen is logged. */
     public final boolean punishSilent;
+    public final boolean staffKeepCopies;
     public final long reviewAboveHours;
     public final long respawnGraceMs;
 
@@ -282,6 +283,7 @@ public final class Settings {
             logger.warning("anti-dupe.punish.mode must be 'enforce' or 'silent', not '" + punishMode + "'. Using silent.");
         }
         punishSilent = !"enforce".equalsIgnoreCase(punishMode);
+        staffKeepCopies = c.getBoolean("anti-dupe.punish.staff-keep-copies", true);
         reviewAboveHours = Math.max(0, c.getLong("anti-dupe.punish.review-above-hours", 50));
         respawnGraceMs = Math.max(0, c.getLong("anti-dupe.punish.respawn-grace-seconds", 30)) * 1000L;
 
