@@ -67,7 +67,7 @@ final class ReportWriter {
             line(out, String.format(Locale.ROOT, "  %-12s %5d flags   %5d near misses", check.displayName(),
                 r.flags[check.ordinal()], r.nearMisses[check.ordinal()]));
         }
-        line(out, "Dupe alerts: " + r.dupeAlerts);
+        line(out, "Dupe alerts: " + r.dupeAlerts + " (information only; only certain incidents below count as evidence)");
         if (!r.itemEvents.isEmpty()) {
             line(out, "Dupes / illegal items undone by NovaGuard (" + r.strongItemIncidents()
                 + " certain, the rest of unknown origin):");

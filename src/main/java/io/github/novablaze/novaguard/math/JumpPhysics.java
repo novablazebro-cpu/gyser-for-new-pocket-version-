@@ -3,6 +3,14 @@ package io.github.novablaze.novaguard.math;
 /** Vanilla jump math: the client moves up by its velocity, then velocity = (velocity - gravity) * 0.98 each tick. */
 public final class JumpPhysics {
 
+    /** NoFall correction never leaves a player with less than this (1 heart). */
+    public static final double MIN_HEALTH_LEFT = 2.0;
+
+    /** Damage capped so the player keeps at least {@link #MIN_HEALTH_LEFT} health (armor only lowers it further). */
+    public static double nonLethalDamage(double damage, double health) {
+        return Math.max(0, Math.min(damage, health - MIN_HEALTH_LEFT));
+    }
+
     private static final double AIR_DRAG = 0.98;
     private static final int MAX_TICKS = 400;
 

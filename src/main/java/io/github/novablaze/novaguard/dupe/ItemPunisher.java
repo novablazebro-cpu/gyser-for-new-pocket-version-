@@ -4,6 +4,8 @@ import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.math.MassIncidentBreaker;
+import io.github.novablaze.novaguard.math.StrikeList;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -30,6 +32,8 @@ public final class ItemPunisher {
 
     private final NovaGuardPlugin plugin;
     private final MassIncidentBreaker breaker = new MassIncidentBreaker();
+    /** Test mode only: the warnings that would have been given (memory only, never used for a ban). */
+    private final Map<UUID, StrikeList> testStrikes = new HashMap<>();
 
     public ItemPunisher(NovaGuardPlugin plugin) {
         this.plugin = plugin;
@@ -63,6 +67,10 @@ public final class ItemPunisher {
             return;
         }
 
+        if (settings.punishSilent) {
+            testMode(player, kind, detail, now);
+            return;
+        }
         boolean counted = plugin.offenses().addStrike(player.getUniqueId(), name, now, settings.strikeCooldownMs);
         plugin.monitor().itemIncident(player, kind + ": " + detail, counted);
         if (!counted) {
@@ -79,6 +87,26 @@ public final class ItemPunisher {
             Placeholder.unparsed("count", Integer.toString(strikes)),
             Placeholder.unparsed("max", Integer.toString(settings.maxWarnings))));
         plugin.getLogger().warning(name + " got dupe warning " + strikes + "/" + settings.maxWarnings + " (" + kind + ")");
+    }
+
+    /** What would have happened, written down so the admin can check it before switching to enforce. */
+    private void testMode(Player player, String kind, String detail, long now) {
+        Settings settings = plugin.settings();
+        StrikeList strikes = testStrikes.computeIfAbsent(player.getUniqueId(), k -> new StrikeList());
+        boolean counted = strikes.add(now, settings.strikeCooldownMs);
+        plugin.monitor().itemIncident(player, "[test mode] " + kind + ": " + detail, false);
+        if (counted) {
+            player.sendMessage(MiniMessage.miniMessage().deserialize(settings.dupeRemovedMessage));
+        }
+        if (!counted) {
+            return;
+        }
+        int n = strikes.count();
+        String would = n > settings.maxWarnings
+            ? "would BAN " + player.getName() + " (" + plugin.bans().describeNextBan(player.getUniqueId()) + ")"
+            : "would give " + player.getName() + " warning " + n + "/" + settings.maxWarnings;
+        plugin.violations().staffNote(player.getName(), "[test mode] " + would + " for " + kind
+            + ". Nothing was done to the player (anti-dupe.punish.mode: silent).");
     }
 
     public void weak(Player player, String kind, String detail) {

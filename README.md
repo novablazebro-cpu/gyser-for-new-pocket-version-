@@ -24,8 +24,8 @@ servers that also run Geyser/Floodgate.
 |---|---|---|
 | Speed | speed hacks, blatant timer | rubberband |
 | Fly | flying, hovering, high jumps | rubberband |
-| NoFall | skipping fall damage | fall damage re-applied |
-| Reach | hitting from too far (lag-compensated) | hit cancelled |
+| NoFall | skipping fall damage | fall damage re-applied (never lethal: at least 1 heart is left) |
+| Reach | hitting from too far (lag-compensated, also for mobs) | hit cancelled (on mobs: never counts towards a ban) |
 | Aim | hitting targets outside your view (killaura) | hit cancelled |
 | WallHit | hitting through solid blocks | hit cancelled |
 | MultiTarget | switching between many targets very fast | hit cancelled |
@@ -70,6 +70,10 @@ The report is evidence, not proof: spectate the player before acting.
 enchanted unstackable item or enchanted book) carry a hidden ID. Two items with one ID at the same time = a
 dupe: the extra copy is removed at once (also inside shulker boxes and bundles). Exactly one copy always stays.
 
+**Start in test mode.** `anti-dupe.punish.mode: silent` (the default) removes duplicates but warns and bans
+nobody: `violations.log` and the console say "[test mode] would give X warning 2/5" or "would BAN X". Read those
+lines for about a week; when every one of them is a real duper, set `mode: enforce` and run `ng reload`.
+
 **Warn, watch, ban.** A player is warned only when the copy can only have come from them:
 "Warning 1/5 ... more than 5 = automatic ban". The first warning also puts them on the suspect list for 3 days.
 A second warning during those 3 days = banned when the watch ends. No repeat = removed from the list and the
@@ -88,6 +92,8 @@ warnings are cleared. More than 5 warnings = banned at once. A report is written
 | 3+ different players "dupe" within 10 minutes (rollback, plugin bug) | yes | no, warnings taken back and paused 24 h |
 | Creative clones (middle click) | IDs are renewed, not a dupe | no |
 | Staff (`novaguard.dupe.exempt`, default op) | yes | no |
+| The player respawned less than 30 s ago (grave / death-chest plugins) | yes | no |
+| A player with 50+ hours on the server reaches a ban | - | the ban waits for an admin (`ng bans now` / `ng bans cancel`) |
 
 **Illegal items** are fixed with the server's own enchantment rules (so always exactly vanilla): levels above
 the maximum are lowered (Sharpness 10 -> 5), conflicting enchantments lose the lower one (Density + Breach),
@@ -103,6 +109,9 @@ creative mode. Use AuthMe (or similar) so nobody can log in as an op.
 
 **What cannot be undone:** stackable items (diamonds, netherite ingots, TNT). All copies of a stack are
 identical, so a duped diamond cannot be told apart from a mined one. Keep Paper's anti-dupe settings below on.
+Instead, **wealth alerts** (`wealth-alerts:`) tell staff when a player becomes much richer within 10 minutes
+(moving items between your own chests and inventory, picking up your own drops and death drops do not count).
+This is only ever an alert: trades and shops look the same.
 
 | Command | What it does |
 |---|---|
@@ -111,6 +120,9 @@ identical, so a duped diamond cannot be told apart from a mined one. Keep Paper'
 | `ng dupe rollback` | You restored a backup: copies of older items are removed but nobody is warned (72 h) |
 | `ng dupe resume` | End a mass-dupe pause early |
 | `ng selftest` | Runs the fix/undo logic on test items in your server and prints PASS/FAIL |
+| `ng item <id>` | The life of one item: who got it, dropped it, put it in which chest, which copy was removed. Use the 8-character ID from an alert, or no ID for the item in your hand |
+| `ng review` | Everybody on the suspect list, most suspicious first, with the reasons: spectate from the top |
+| `ng unban <player>` | Undo a wrong ban completely: account, IPs and alts banned with it, and the ban is removed from the history so the next ban is not longer |
 | `ng exempt <player> <seconds>` | Also gives their items new IDs (use after restoring an inventory with a rollback plugin) |
 
 ### Ban length and IP bans

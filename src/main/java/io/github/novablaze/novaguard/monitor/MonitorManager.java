@@ -275,6 +275,30 @@ public final class MonitorManager implements Runnable {
         plugin.bans().banNow(uuid, name, reason, reportName, "dupe/illegal items");
     }
 
+    /** One line of "ng review": who to look at first. */
+    public record ReviewEntry(String name, boolean online, double score, int certainItemIncidents, String level,
+                              List<String> reasons, long endMs) {
+    }
+
+    /**
+     * Everybody on the suspect list, most suspicious first: cheat score plus certain dupe / illegal-item incidents.
+     * Staff spectate the top of the list instead of guessing.
+     */
+    public List<ReviewEntry> reviewList() {
+        List<ReviewEntry> list = new ArrayList<>();
+        for (MonitorRecord record : records.values()) {
+            if (record.pendingKick) {
+                continue;
+            }
+            MonitorVerdict verdict = MonitorVerdict.evaluate(record.evidence());
+            list.add(new ReviewEntry(record.name, Bukkit.getPlayer(record.uuid) != null, verdict.score(),
+                record.strongItemIncidents(), verdict.level().text(), verdict.reasons(), record.endMs));
+        }
+        list.sort((a, b) -> Double.compare(b.score() + 3.0 * b.certainItemIncidents(),
+            a.score() + 3.0 * a.certainItemIncidents()));
+        return list;
+    }
+
     public void recordDupe(String playerName) {
         MonitorRecord record = find(playerName);
         if (record != null) {

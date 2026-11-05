@@ -124,6 +124,15 @@ public final class Settings {
     public final String dupeRemovedMessage;
     public final String dupeBanReason;
     public final boolean itemBanOnRepeat;
+    /** Test mode: dupes are still undone, but nobody is warned or banned; what would happen is logged. */
+    public final boolean punishSilent;
+    public final long reviewAboveHours;
+    public final long respawnGraceMs;
+
+    public final boolean wealthEnabled;
+    public final Map<Material, Integer> wealthValues;
+    public final long wealthWindowMs;
+    public final long wealthThreshold;
 
     public final boolean illegalEnabled;
     public final boolean illegalRemoveUnbreakable;
@@ -131,7 +140,6 @@ public final class Settings {
     public final boolean illegalSkipPluginItems;
     public final boolean illegalSuspect;
     public final String illegalFixedMessage;
-    public final String illegalBanReason;
 
     public Settings(FileConfiguration c, Logger logger) {
         alertCooldownMs = Math.max(0, c.getLong("alerts.cooldown-ms", 1500));
@@ -269,6 +277,30 @@ public final class Settings {
                 + " This is not counted as a warning.</yellow>");
         dupeBanReason = c.getString("anti-dupe.punish.ban-reason", "Duping / illegal items (NovaGuard)");
         itemBanOnRepeat = c.getBoolean("anti-dupe.punish.ban-on-repeat", true);
+        String punishMode = c.getString("anti-dupe.punish.mode", "silent");
+        if (!"enforce".equalsIgnoreCase(punishMode) && !"silent".equalsIgnoreCase(punishMode)) {
+            logger.warning("anti-dupe.punish.mode must be 'enforce' or 'silent', not '" + punishMode + "'. Using silent.");
+        }
+        punishSilent = !"enforce".equalsIgnoreCase(punishMode);
+        reviewAboveHours = Math.max(0, c.getLong("anti-dupe.punish.review-above-hours", 50));
+        respawnGraceMs = Math.max(0, c.getLong("anti-dupe.punish.respawn-grace-seconds", 30)) * 1000L;
+
+        wealthEnabled = c.getBoolean("wealth-alerts.enabled", true);
+        Map<Material, Integer> values = new java.util.EnumMap<>(Material.class);
+        ConfigurationSection valueSection = c.getConfigurationSection("wealth-alerts.values");
+        if (valueSection != null) {
+            for (String name : valueSection.getKeys(false)) {
+                Material material = Material.matchMaterial(name.toUpperCase(Locale.ROOT));
+                if (material == null) {
+                    logger.warning("Unknown material in wealth-alerts.values: " + name);
+                } else {
+                    values.put(material, Math.max(0, valueSection.getInt(name)));
+                }
+            }
+        }
+        wealthValues = java.util.Collections.unmodifiableMap(values);
+        wealthWindowMs = Math.max(1, c.getLong("wealth-alerts.window-minutes", 10)) * 60_000L;
+        wealthThreshold = Math.max(1, c.getLong("wealth-alerts.threshold", 576));
 
         illegalEnabled = c.getBoolean("illegal-items.enabled", true);
         illegalRemoveUnbreakable = c.getBoolean("illegal-items.remove-unbreakable", true);
@@ -277,7 +309,6 @@ public final class Settings {
         illegalSuspect = c.getBoolean("illegal-items.suspect", true);
         illegalFixedMessage = c.getString("illegal-items.fixed-message",
             "<yellow>An item had enchantments that are impossible in survival and was fixed: <changes></yellow>");
-        illegalBanReason = dupeBanReason;
 
         ConfigurationSection unused = c.getConfigurationSection("checks");
         if (unused == null) {

@@ -55,10 +55,24 @@ public final class ViolationManager {
      * @return true when the check should now block the cheat (see {@link #enforces})
      */
     public boolean flag(Player player, PlayerData data, CheckType type, double amount, String detail) {
+        return flag(player, data, type, amount, detail, true);
+    }
+
+    /**
+     * @param banEvidence false for flags NovaGuard is not sure enough about to ever lead to a ban (e.g. reach
+     *                    against mobs, whose positions are only estimated): the cheat is still blocked and
+     *                    alerted, but it never makes the player a suspect and never counts in a report verdict.
+     */
+    public boolean flag(Player player, PlayerData data, CheckType type, double amount, String detail,
+                        boolean banEvidence) {
         Settings settings = plugin.settings();
         long now = System.currentTimeMillis();
         if (data.monitored) {
-            plugin.monitor().recordFlag(player.getUniqueId(), type);
+            if (banEvidence) {
+                plugin.monitor().recordFlag(player.getUniqueId(), type);
+            } else {
+                plugin.monitor().recordNearMiss(player.getUniqueId(), type);
+            }
         }
         if (data.shadow) {
             // Monitored Bedrock player: written to the log only. No VL, no alert, no kick.
@@ -87,13 +101,17 @@ public final class ViolationManager {
         checkSpike(type, now);
 
         double suspectVl = settings.check(type).suspectVl();
-        if (settings.banWaves && suspectVl > 0 && vl >= suspectVl) {
+        if (banEvidence && settings.banWaves && suspectVl > 0 && vl >= suspectVl) {
             plugin.bans().suspect(player, data, type, vl);
         }
 
         double kickVl = settings.check(type).kickVl();
         // With ban waves a kick would tell the cheater they were caught: checks that feed the ban wave never kick.
         boolean banWaveHandles = settings.banWaves && suspectVl > 0 && !data.bedrock;
+        if (!banEvidence) {
+            // Not sure enough to punish: never kick for it either.
+            banWaveHandles = true;
+        }
         if (!banWaveHandles && kickVl > 0 && vl >= kickVl && kickAllowed(player, data, now)) {
             data.violations.reset(type);
             String reason = type.displayName();
@@ -166,6 +184,27 @@ public final class ViolationManager {
         alert(playerName, CheckType.DUPE, detail, -1, -1);
         if (plugin.settings().alertConsole) {
             plugin.getLogger().warning(line);
+        }
+    }
+
+    /**
+     * Neutral information for staff (not a failed check, never evidence): logged, shown to staff with alerts on,
+     * and printed in the console.
+     */
+    public void staffNote(String playerName, String detail) {
+        String line = playerName + " note: " + detail;
+        log(line);
+        plugin.getLogger().info(line);
+        Component message = Component.text("[NovaGuard] ", NamedTextColor.DARK_AQUA)
+            .append(Component.text(playerName + " ", NamedTextColor.WHITE))
+            .append(Component.text(detail, NamedTextColor.GRAY));
+        for (Player staff : Bukkit.getOnlinePlayers()) {
+            if (staff.hasPermission("novaguard.alerts")) {
+                PlayerData staffData = plugin.players().getIfPresent(staff.getUniqueId());
+                if (staffData == null || staffData.alertsEnabled) {
+                    staff.sendMessage(message);
+                }
+            }
         }
     }
 

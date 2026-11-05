@@ -5,6 +5,10 @@ import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.math.EnchantRules;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.List;
 import java.util.Map;
 import org.bukkit.NamespacedKey;
@@ -34,6 +38,8 @@ public final class ItemSanitizer {
     private static final Result NOTHING = new Result(null, List.of(), false);
 
     private final NovaGuardPlugin plugin;
+    /** Item types that could not be fixed (warned once each). */
+    private final Set<String> warnedUnstable = new HashSet<>();
 
     public ItemSanitizer(NovaGuardPlugin plugin) {
         this.plugin = plugin;
@@ -52,7 +58,7 @@ public final class ItemSanitizer {
         // changes: leave the item alone instead of "fixing" it forever (endless alerts, a pickup that never ends).
         if (sanitize(result.item(), 0, settings) != NOTHING) {
             if (warnedUnstable.add(item.getType().name())) {
-                plugin.getLogger().warning("Could not fix an illegal " + item.getType().name().toLowerCase(java.util.Locale.ROOT)
+                plugin.getLogger().warning("Could not fix an illegal " + item.getType().name().toLowerCase(Locale.ROOT)
                     + " (" + String.join(", ", result.changes()) + "): the server kept the change. It is left alone."
                     + " Please report this (shown once per item type).");
             }
@@ -61,7 +67,6 @@ public final class ItemSanitizer {
         return result;
     }
 
-    private final java.util.Set<String> warnedUnstable = new java.util.HashSet<>();
 
     private Result sanitize(ItemStack item, int depth, Settings settings) {
         List<String> changes = new ArrayList<>();
@@ -120,7 +125,7 @@ public final class ItemSanitizer {
                     if (r != NOTHING) {
                         children.set(i, r.item());
                         r.changes().forEach(c -> changes.add(c + " (inside "
-                            + item.getType().name().toLowerCase(java.util.Locale.ROOT) + ")"));
+                            + item.getType().name().toLowerCase(Locale.ROOT) + ")"));
                         childChanged = true;
                     }
                 }
@@ -146,7 +151,7 @@ public final class ItemSanitizer {
     }
 
     private static void apply(Map<Enchantment, Integer> original, EnchantRules.Fix fix,
-                              java.util.function.BiConsumer<Enchantment, Integer> add) {
+                              BiConsumer<Enchantment, Integer> add) {
         for (Enchantment enchantment : original.keySet()) {
             Integer level = fix.keep().get(enchantment.getKey().asString());
             if (level != null) {
@@ -157,7 +162,7 @@ public final class ItemSanitizer {
 
     /** True when another plugin stored its own data on the item. */
     public boolean hasForeignData(ItemStack item) {
-        String own = plugin.getName().toLowerCase(java.util.Locale.ROOT);
+        String own = plugin.getName().toLowerCase(Locale.ROOT);
         for (NamespacedKey key : item.getPersistentDataContainer().getKeys()) {
             if (!key.getNamespace().equals(own)) {
                 return true;

@@ -2,7 +2,12 @@ package io.github.novablaze.novaguard.dupe;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
+import io.github.novablaze.novaguard.items.ItemSanitizer;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
@@ -26,9 +31,12 @@ import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import io.github.novablaze.novaguard.items.ItemSanitizer;
 import org.bukkit.event.vehicle.VehicleDestroyEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -76,7 +84,7 @@ public final class DupeListener implements Listener, Runnable {
         event.setCancelled(true);
         Bukkit.getScheduler().runTask(plugin, () -> viewer.closeInventory());
         plugin.violations().dupeAlert(viewer.getName(),
-            "used the inventory of a " + entity.getType().name().toLowerCase(java.util.Locale.ROOT)
+            "used the inventory of a " + entity.getType().name().toLowerCase(Locale.ROOT)
                 + " that is dead, gone or far away (blocked)");
     }
 
@@ -150,7 +158,7 @@ public final class DupeListener implements Listener, Runnable {
                 plugin.violations().dupeAlert(player.getName(), "picked up an overstacked " + typeName(stack)
                     + " (" + original + " > " + stack.getMaxStackSize() + ", trimmed)");
             }
-            if (isCreative(player)) {
+            if (ItemFingerprints.isCreative(player)) {
                 return;
             }
             ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(item.getItemStack());
@@ -160,9 +168,8 @@ public final class DupeListener implements Listener, Runnable {
                 String text = typeName(stack) + ": " + String.join(", ", result.changes());
                 plugin.violations().dupeAlert(player.getName(), "picked up an illegal item, fixed before it reached"
                     + " the inventory (not blamed): " + text);
-                player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(
-                    settings.illegalFixedMessage,
-                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("changes", text)));
+                player.sendMessage(MiniMessage.miniMessage().deserialize(settings.illegalFixedMessage,
+                    Placeholder.unparsed("changes", text)));
             }
         });
     }
@@ -171,14 +178,44 @@ public final class DupeListener implements Listener, Runnable {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPickupDone(EntityPickupItemEvent event) {
         if (event.getEntity() instanceof Player player) {
-            plugin.safety().run("anti-dupe", () -> plugin.fingerprints().onPickup(player, event.getItem().getItemStack()));
+            plugin.safety().run("anti-dupe", () -> {
+                ItemStack picked = event.getItem().getItemStack();
+                plugin.fingerprints().onPickup(player, picked);
+                plugin.wealth().onPickup(player, picked, event.getItem().getThrower());
+            });
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        plugin.safety().run("anti-dupe",
-            () -> plugin.fingerprints().onDrop(event.getPlayer(), event.getItemDrop().getItemStack()));
+        plugin.safety().run("anti-dupe", () -> {
+            ItemStack dropped = event.getItemDrop().getItemStack();
+            plugin.fingerprints().onDrop(event.getPlayer(), dropped);
+            plugin.wealth().onDrop(event.getPlayer(), dropped);
+        });
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onRespawn(PlayerRespawnEvent event) {
+        plugin.fingerprints().onRespawn(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDeath(PlayerDeathEvent event) {
+        plugin.wealth().onDeath(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuit(PlayerQuitEvent event) {
+        plugin.wealth().reset(event.getPlayer().getUniqueId());
+    }
+
+    /** Breaking a container drops its contents: for wealth alerts this is not a gain when picked up again. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBreakContainer(BlockBreakEvent event) {
+        if (event.getBlock().getState(false) instanceof org.bukkit.block.Container container) {
+            plugin.safety().run("anti-dupe", () -> plugin.wealth().onBreakContainer(event.getPlayer(), container.getInventory()));
+        }
     }
 
     /**
@@ -200,6 +237,8 @@ public final class DupeListener implements Listener, Runnable {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onGameMode(PlayerGameModeChangeEvent event) {
         Player player = event.getPlayer();
+        // Creative items are not wealth: start counting again in the new game mode.
+        plugin.wealth().reset(player.getUniqueId());
         GameMode from = player.getGameMode();
         GameMode to = event.getNewGameMode();
         boolean leavingCreative = (from == GameMode.CREATIVE || from == GameMode.SPECTATOR)
@@ -219,7 +258,7 @@ public final class DupeListener implements Listener, Runnable {
         Player player = event.getPlayer();
         if (plugin.settings().illegalEnabled) {
             Bukkit.getScheduler().runTask(plugin, () -> plugin.safety().run("anti-dupe", () -> {
-                if (player.isOnline() && !isCreative(player)) {
+                if (player.isOnline() && !ItemFingerprints.isCreative(player)) {
                     plugin.fingerprints().sanitizeSilently(player);
                 }
             }));
@@ -271,14 +310,15 @@ public final class DupeListener implements Listener, Runnable {
         }
         plugin.safety().run("anti-dupe", () -> {
             fixOverstacked(player, top, "opened container");
-            if (!isCreative(player)) {
-                java.util.List<String> fixes = plugin.fingerprints().sanitizeInventory(top);
+            if (!ItemFingerprints.isCreative(player)) {
+                List<String> fixes = plugin.fingerprints().sanitizeInventory(top);
                 if (!fixes.isEmpty()) {
                     plugin.violations().dupeAlert(player.getName(), "opened a container with illegal item(s), fixed"
                         + " (not blamed): " + String.join("; ", fixes));
                 }
             }
             plugin.fingerprints().snapshotOpen(player, top);
+            plugin.wealth().onOpen(player, top);
         });
     }
 
@@ -299,6 +339,7 @@ public final class DupeListener implements Listener, Runnable {
             }
             // First what went in and out of the container (honest moves), then the scan that judges.
             plugin.fingerprints().recordPlacement(player, top);
+            plugin.wealth().onClose(player, top);
             plugin.fingerprints().scan(player, top);
         }));
     }
@@ -344,11 +385,7 @@ public final class DupeListener implements Listener, Runnable {
         }
     }
 
-    private static boolean isCreative(Player player) {
-        return player.getGameMode() == GameMode.CREATIVE || player.getGameMode() == GameMode.SPECTATOR;
-    }
-
     private static String typeName(ItemStack item) {
-        return item.getType().name().toLowerCase(java.util.Locale.ROOT);
+        return item.getType().name().toLowerCase(Locale.ROOT);
     }
 }

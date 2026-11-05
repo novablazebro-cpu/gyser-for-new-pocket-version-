@@ -180,7 +180,7 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
         double score = combat + movement;
         if (e.dupeAlerts() > 0) {
             score += 2;
-            reasons.add(e.dupeAlerts() + " dupe alerts");
+            reasons.add(e.dupeAlerts() + " certain dupe / illegal-item incident(s)");
         }
         if (e.averagePing() > 250) {
             score -= 2;

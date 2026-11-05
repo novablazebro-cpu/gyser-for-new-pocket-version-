@@ -124,7 +124,8 @@ public final class MonitorRecord {
             .cpsSeconds(cps.count())
             .cpsMean(cps.mean())
             .cpsStdDev(cps.stdDev())
-            .dupeAlerts(dupeAlerts)
+            // Only incidents that gave a warning: alerts also cover loot and chests the player is not blamed for.
+            .dupeAlerts(strongItemIncidents())
             .rotationSamples(rotation.samples())
             .rotationFit(rotation.bestFit());
         for (CheckType type : CheckType.values()) {

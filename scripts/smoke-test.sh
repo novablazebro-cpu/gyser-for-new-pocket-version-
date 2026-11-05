@@ -45,6 +45,9 @@ echo "novaguard health" >&3
 echo "novaguard stats" >&3
 echo "novaguard selftest" >&3
 echo "novaguard dupe nobody" >&3
+echo "novaguard review" >&3
+echo "novaguard item abcdef12" >&3
+echo "novaguard unban nobody" >&3
 sleep 3
 echo "stop" >&3
 wait "$SERVER_PID" || true
@@ -60,6 +63,9 @@ grep -q "has never joined this server" server.log || { echo "ERROR: /monitor <pl
 grep -q "No bans are queued" server.log || { echo "ERROR: /novaguard bans did not answer"; FAIL=1; }
 grep -q "Flags in the last hour" server.log || { echo "ERROR: /novaguard stats did not answer"; FAIL=1; }
 grep -q "nobody has never joined\." server.log || { echo "ERROR: /novaguard dupe did not answer"; FAIL=1; }
+grep -q "Nobody is on the suspect list" server.log || { echo "ERROR: /novaguard review did not answer"; FAIL=1; }
+grep -q "No item with an ID starting with" server.log || { echo "ERROR: /novaguard item did not answer"; FAIL=1; }
+grep -q "TEST MODE" server.log || { echo "ERROR: the test-mode reminder is missing"; FAIL=1; }
 # The self-test fixes illegal items and undoes dupes on test items inside the real server.
 grep -E "PASS |FAIL |Self-test" server.log || true
 grep -q "Self-test passed" server.log || { echo "ERROR: /novaguard selftest did not pass"; FAIL=1; }

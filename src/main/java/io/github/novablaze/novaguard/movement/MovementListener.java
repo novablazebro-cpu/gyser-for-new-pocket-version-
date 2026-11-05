@@ -270,9 +270,14 @@ public final class MovementListener implements Listener, Runnable {
                     return;
                 }
                 // Damage on the next tick, outside the move event. Armor and Feather Falling still apply.
+                // Never lethal: if this flag was a false positive, an innocent player must not die and lose
+                // their items over it. A NoFall cheater still loses almost all of their health.
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (player.isOnline() && !player.isDead()) {
-                        player.damage(damage, DamageSource.builder(DamageType.FALL).build());
+                        double capped = JumpPhysics.nonLethalDamage(damage, player.getHealth());
+                        if (capped > 0) {
+                            player.damage(capped, DamageSource.builder(DamageType.FALL).build());
+                        }
                     }
                 });
             }

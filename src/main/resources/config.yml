@@ -255,6 +255,11 @@ anti-dupe:
   # come from them (see the README: "Who gets blamed"). Unclear cases are undone without a warning.
   punish:
     enabled: true
+    # silent = TEST MODE: duplicates are still removed, but nobody is warned or banned. The console and
+    #          violations.log say "[test mode] would warn ... / would ban ...". Run this for about a week, read
+    #          the log, and when every "would" is a real duper, switch to: enforce
+    # enforce = warnings and bans as described below.
+    mode: silent
     # Warnings before the ban: "Warning 1/5" ... more than max-warnings = banned at once (ban length: punishments).
     max-warnings: 5
     # Warnings closer together than this count as one (one exploit often shows up in several scans).
@@ -271,12 +276,42 @@ anti-dupe:
     mass-dupe-players: 3
     mass-dupe-minutes: 10
     mass-dupe-pause-hours: 24
+    # Players with at least this many hours on the server are never banned for dupes by NovaGuard alone: the ban
+    # waits for an admin (red console alert; ng bans now <name> / ng bans cancel <name>). 0 = off.
+    review-above-hours: 50
+    # Grave / death-chest plugins give items back on respawn in their own way: copies that appear this soon after
+    # a respawn are removed, but never warned.
+    respawn-grace-seconds: 30
     # Also warn and ban Bedrock (Geyser) players for dupes. Item evidence does not depend on the client, unlike
     # movement checks. IP bans of Bedrock players are still never proposed.
     bedrock: true
     warn-message: "<red><bold>Duping detected!</bold> The duplicated item was removed. Warning <count>/<max>. More than <max> warnings = automatic ban.</red>"
     removed-message: "<yellow>A duplicate copy of an item was removed (another copy of the same item exists). This is not counted as a warning.</yellow>"
     ban-reason: "Duping / illegal items (NovaGuard)"
+
+wealth-alerts:
+  # Stackable items (diamonds...) cannot carry a hidden ID, so a duped diamond looks like a mined one. Instead
+  # staff are ALERTED (never anything automatic) when a player gains a lot of value very fast. Trades, shops and
+  # big mining trips also do this: spectate before acting.
+  enabled: true
+  window-minutes: 10
+  # Value gained within the window that triggers an alert (576 = 64 diamond blocks... see values).
+  threshold: 576
+  # Value of one item. Items inside shulker boxes and bundles count too.
+  values:
+    DIAMOND: 1
+    DIAMOND_BLOCK: 9
+    NETHERITE_SCRAP: 4
+    NETHERITE_INGOT: 16
+    NETHERITE_BLOCK: 144
+    ANCIENT_DEBRIS: 4
+    ENCHANTED_GOLDEN_APPLE: 16
+    TOTEM_OF_UNDYING: 8
+    NETHER_STAR: 32
+    ELYTRA: 64
+    BEACON: 40
+    SHULKER_SHELL: 2
+    EMERALD_BLOCK: 1
 
 illegal-items:
   # Fixes items that are impossible in survival: enchantments above their maximum level (Sharpness 10),

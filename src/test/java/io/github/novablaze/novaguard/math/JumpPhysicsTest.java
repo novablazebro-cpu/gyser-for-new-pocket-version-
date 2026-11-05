@@ -45,4 +45,12 @@ class JumpPhysicsTest {
     void airTimeIsCappedForZeroGravity() {
         assertTrue(JumpPhysics.airTimeTicks(0.42, 0.0) <= 400);
     }
+
+    @Test
+    void noFallCorrectionNeverKills() {
+        assertEquals(10.0, JumpPhysics.nonLethalDamage(10.0, 20.0), 1e-9);
+        assertEquals(18.0, JumpPhysics.nonLethalDamage(50.0, 20.0), 1e-9);
+        assertEquals(0.0, JumpPhysics.nonLethalDamage(5.0, 2.0), 1e-9);
+        assertEquals(0.0, JumpPhysics.nonLethalDamage(5.0, 1.0), 1e-9);
+    }
 }

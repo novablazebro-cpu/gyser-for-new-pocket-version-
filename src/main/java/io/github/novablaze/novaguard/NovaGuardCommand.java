@@ -1,5 +1,6 @@
 package io.github.novablaze.novaguard;
 
+import io.github.novablaze.novaguard.ban.BanManager;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -18,12 +19,14 @@ public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
         List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
-            "dupe", "selftest");
+            "dupe", "item", "unban", "review", "selftest");
 
     private final NovaGuardPlugin plugin;
+    private final ItemCommands items;
 
     public NovaGuardCommand(NovaGuardPlugin plugin) {
         this.plugin = plugin;
+        this.items = new ItemCommands(plugin, NovaGuardCommand::reply);
     }
 
     @Override
@@ -75,15 +78,27 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             case "dupe" -> {
                 if (requireAdmin(sender)) {
-                    dupe(sender, args);
+                    items.dupe(sender, args);
+                }
+            }
+            case "item" -> {
+                if (requireAdmin(sender)) {
+                    items.item(sender, args);
+                }
+            }
+            case "unban" -> {
+                if (requireAdmin(sender)) {
+                    items.unban(sender, args);
+                }
+            }
+            case "review" -> {
+                if (requireAdmin(sender)) {
+                    items.review(sender);
                 }
             }
             case "selftest" -> {
                 if (requireAdmin(sender)) {
-                    for (String line : plugin.fingerprints().selfTest()) {
-                        reply(sender, line, line.startsWith("FAIL") || line.contains("FAILED")
-                            ? NamedTextColor.RED : NamedTextColor.GREEN);
-                    }
+                    items.selftest(sender);
                 }
             }
             case "notifytest" -> {
@@ -95,7 +110,8 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
                 + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest"
-                + " | dupe <player>|pardon <player>|rollback|resume | selftest>", NamedTextColor.YELLOW);
+                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | selftest>",
+                NamedTextColor.YELLOW);
         }
     }
 
@@ -130,7 +146,7 @@ public final class NovaGuardCommand implements BasicCommand {
             return names;
         }
         if (args.length == 2 && (args[0].equalsIgnoreCase("info") || args[0].equalsIgnoreCase("exempt")
-            || args[0].equalsIgnoreCase("alts"))) {
+            || args[0].equalsIgnoreCase("alts") || args[0].equalsIgnoreCase("unban"))) {
             List<String> names = new ArrayList<>();
             String start = args[1].toLowerCase(Locale.ROOT);
             for (Player player : Bukkit.getOnlinePlayers()) {
@@ -192,7 +208,7 @@ public final class NovaGuardCommand implements BasicCommand {
                 : args[2] + " is not queued.", NamedTextColor.GREEN);
             return;
         }
-        for (io.github.novablaze.novaguard.ban.BanManager.Approval approval : plugin.bans().approvals()) {
+        for (BanManager.Approval approval : plugin.bans().approvals()) {
             reply(sender, "WAITING FOR APPROVAL: IP ban for " + approval.name + " - " + plugin.bans().scope(approval)
                 + "  ->  /ng approve " + approval.name + " or /ng deny " + approval.name, NamedTextColor.RED);
         }
@@ -200,77 +216,13 @@ public final class NovaGuardCommand implements BasicCommand {
             reply(sender, "No bans are queued.", NamedTextColor.GREEN);
             return;
         }
-        for (io.github.novablaze.novaguard.ban.BanManager.Pending entry : plugin.bans().pending()) {
-            reply(sender, entry.name + " - banned " + io.github.novablaze.novaguard.ban.BanManager.time(entry.executeMs)
-                + " - " + entry.reason, NamedTextColor.GOLD);
+        for (BanManager.Pending entry : plugin.bans().pending()) {
+            reply(sender, entry.name + " - " + (entry.review ? "WAITS FOR YOUR DECISION (long-time player)"
+                : "banned " + BanManager.time(entry.executeMs)) + " - " + entry.reason,
+                entry.review ? NamedTextColor.RED : NamedTextColor.GOLD);
         }
         reply(sender, "Cancel one: /novaguard bans cancel <player>   Ban now: /novaguard bans now <player>",
             NamedTextColor.GRAY);
-    }
-
-    /** /ng dupe <player> | pardon <player> | rollback | resume */
-    private void dupe(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            reply(sender, "Usage: /novaguard dupe <player> | dupe pardon <player> | dupe rollback | dupe resume",
-                NamedTextColor.YELLOW);
-            return;
-        }
-        long now = System.currentTimeMillis();
-        String sub = args[1].toLowerCase(Locale.ROOT);
-        if (sub.equals("rollback") && args.length == 2) {
-            plugin.serverState().markRollback(now, "marked by " + sender.getName());
-            reply(sender, "OK: copies of items that existed before now are still removed, but nobody is warned for"
-                + " them for the next " + plugin.settings().crashGraceMs / 3_600_000 + " hours. Use this after"
-                + " restoring a world or player-data backup.", NamedTextColor.GREEN);
-            return;
-        }
-        if (sub.equals("resume") && args.length == 2) {
-            plugin.serverState().pauseStrikes(0);
-            reply(sender, "Dupe warnings are active again.", NamedTextColor.GREEN);
-            return;
-        }
-        boolean pardon = sub.equals("pardon");
-        if (pardon && args.length < 3) {
-            reply(sender, "Usage: /novaguard dupe pardon <player>", NamedTextColor.RED);
-            return;
-        }
-        String name = pardon ? args[2] : args[1];
-        org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayerIfCached(name);
-        if (target == null) {
-            reply(sender, name + " has never joined.", NamedTextColor.RED);
-            return;
-        }
-        java.util.UUID uuid = target.getUniqueId();
-        if (pardon) {
-            plugin.offenses().clearStrikes(uuid);
-            plugin.monitor().pardonItems(uuid);
-            reply(sender, "Cleared the dupe warnings of " + name + ". Their earlier incidents no longer count"
-                + " towards a ban.", NamedTextColor.GREEN);
-            return;
-        }
-        int strikes = plugin.offenses().strikes(uuid);
-        reply(sender, name + ": " + strikes + "/" + plugin.settings().maxWarnings + " dupe warnings (more = ban). Next ban"
-            + " would be: " + plugin.bans().describeNextBan(uuid) + ".", NamedTextColor.AQUA);
-        for (io.github.novablaze.novaguard.ban.OffenseLog.Ban ban : plugin.offenses().bans(uuid)) {
-            reply(sender, "  banned " + io.github.novablaze.novaguard.ban.BanManager.time(ban.timeMs()) + " for "
-                + (ban.days() == 0 ? "ever" : ban.days() + " days") + " (" + ban.kind() + ")", NamedTextColor.GRAY);
-        }
-        io.github.novablaze.novaguard.monitor.MonitorRecord record = plugin.monitor().get(uuid);
-        if (record != null && record.itemWatch) {
-            reply(sender, "  on the suspect list until " + io.github.novablaze.novaguard.ban.BanManager.time(record.endMs)
-                + ", " + record.strongItemIncidents() + " certain incident(s) (2 or more = ban when the watch ends)",
-                NamedTextColor.GOLD);
-            int from = Math.max(0, record.itemEvents.size() - 5);
-            for (io.github.novablaze.novaguard.monitor.MonitorRecord.ItemEvent event
-                : record.itemEvents.subList(from, record.itemEvents.size())) {
-                reply(sender, "  " + io.github.novablaze.novaguard.ban.BanManager.time(event.timeMs())
-                    + (event.strong() ? " [certain] " : " [unknown origin] ") + event.text(), NamedTextColor.GRAY);
-            }
-        }
-        if (now < plugin.serverState().strikesPausedUntilMs()) {
-            reply(sender, "Dupe warnings are PAUSED until " + io.github.novablaze.novaguard.ban.BanManager.time(
-                plugin.serverState().strikesPausedUntilMs()) + " (mass dupe). Resume: /ng dupe resume", NamedTextColor.RED);
-        }
     }
 
     private void approval(CommandSender sender, String sub, String[] args) {
@@ -347,7 +299,7 @@ public final class NovaGuardCommand implements BasicCommand {
         return false;
     }
 
-    private static void reply(CommandSender sender, String text, NamedTextColor color) {
+    static void reply(CommandSender sender, String text, NamedTextColor color) {
         sender.sendMessage(Component.text("[NovaGuard] ", NamedTextColor.DARK_AQUA).append(Component.text(text, color)));
     }
 }

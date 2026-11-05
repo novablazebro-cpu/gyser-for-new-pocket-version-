@@ -14,8 +14,9 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
- * Per player: dupe / illegal-item warnings (strikes) and every ban NovaGuard gave. Stored in offenses.yml so
- * the ban ladder (3 days, then 10, then 30) and the IP-ban question survive restarts.
+ * Per player: dupe / illegal-item warnings (strikes), every ban NovaGuard gave, and the IPs / alt accounts that
+ * were banned together with them (so a wrong ban can be undone completely). Stored in offenses.yml, so the ban
+ * ladder (3 days, then 10, then 30) and the IP-ban question survive restarts.
  */
 public final class OffenseLog {
 
@@ -27,8 +28,14 @@ public final class OffenseLog {
 
     private static final class Entry {
         String name;
-        final StrikeList strikes = new StrikeList();
+        StrikeList strikes = new StrikeList();
         final List<Ban> bans = new ArrayList<>();
+        /** "ip:1.2.3.4" or "alt:&lt;uuid&gt;": banned together with this player. */
+        final List<String> linked = new ArrayList<>();
+
+        boolean isEmpty() {
+            return strikes.count() == 0 && bans.isEmpty() && linked.isEmpty();
+        }
     }
 
     private final NovaGuardPlugin plugin;
@@ -48,6 +55,8 @@ public final class OffenseLog {
         }
         return entry;
     }
+
+    // ---------------------------------------------------------------- strikes
 
     /** @return true when a new strike was counted (false inside the cooldown of the previous strike) */
     public boolean addStrike(UUID uuid, String name, long nowMs, long cooldownMs) {
@@ -86,9 +95,38 @@ public final class OffenseLog {
         return refunded;
     }
 
+    // ---------------------------------------------------------------- bans
+
     public void recordBan(UUID uuid, String name, long nowMs, long days, String kind) {
         entry(uuid, name).bans.add(new Ban(nowMs, days, kind));
         save();
+    }
+
+    /** Remembers an IP or alt account that was banned because of this player. */
+    public void recordLinked(UUID uuid, String linked) {
+        Entry entry = entry(uuid, null);
+        if (!entry.linked.contains(linked)) {
+            entry.linked.add(linked);
+            save();
+        }
+    }
+
+    /**
+     * Undoes the player's last NovaGuard ban in the history (a wrong ban must not make the next one longer).
+     *
+     * @return the IPs / alts that were banned with them (now forgotten), or null when there was no ban
+     */
+    public List<String> removeLastBan(UUID uuid) {
+        Entry entry = entries.get(uuid);
+        if (entry == null || entry.bans.isEmpty()) {
+            return null;
+        }
+        entry.bans.remove(entry.bans.size() - 1);
+        List<String> linked = List.copyOf(entry.linked);
+        entry.linked.clear();
+        entry.strikes.clear();
+        save();
+        return linked;
     }
 
     /** NovaGuard bans of this player in the last {@code rememberDays} days (0 = all time). */
@@ -97,10 +135,7 @@ public final class OffenseLog {
         if (entry == null) {
             return 0;
         }
-        if (rememberDays <= 0) {
-            return entry.bans.size();
-        }
-        long since = nowMs - rememberDays * DAY_MS;
+        long since = rememberDays <= 0 ? Long.MIN_VALUE : nowMs - rememberDays * DAY_MS;
         int count = 0;
         for (Ban ban : entry.bans) {
             if (ban.timeMs() >= since) {
@@ -131,17 +166,14 @@ public final class OffenseLog {
                 UUID uuid = UUID.fromString(key);
                 Entry entry = new Entry();
                 entry.name = s.getString("name", key);
-                List<Long> times = new ArrayList<>(s.getLongList("strikes"));
-                StrikeList loaded = StrikeList.of(times);
-                for (long t : loaded.times()) {
-                    entry.strikes.add(t, 0);
-                }
+                entry.strikes = StrikeList.of(s.getLongList("strikes"));
                 for (String line : s.getStringList("bans")) {
                     String[] parts = line.split(";", 3);
                     if (parts.length == 3) {
                         entry.bans.add(new Ban(Long.parseLong(parts[0]), Long.parseLong(parts[1]), parts[2]));
                     }
                 }
+                entry.linked.addAll(s.getStringList("linked"));
                 entries.put(uuid, entry);
             } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Skipping bad entry in offenses.yml: " + key);
@@ -153,7 +185,7 @@ public final class OffenseLog {
         YamlConfiguration yaml = new YamlConfiguration();
         for (Map.Entry<UUID, Entry> e : entries.entrySet()) {
             Entry entry = e.getValue();
-            if (entry.strikes.count() == 0 && entry.bans.isEmpty()) {
+            if (entry.isEmpty()) {
                 continue;
             }
             ConfigurationSection s = yaml.createSection(e.getKey().toString());
@@ -164,6 +196,7 @@ public final class OffenseLog {
                 bans.add(ban.timeMs() + ";" + ban.days() + ";" + ban.kind());
             }
             s.set("bans", bans);
+            s.set("linked", entry.linked);
         }
         try {
             Files.createDirectories(file.getParentFile().toPath());

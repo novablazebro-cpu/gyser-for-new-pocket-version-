@@ -52,6 +52,7 @@ public final class BanManager implements Runnable, Listener {
     private static final long DAY_MS = 86_400_000L;
     /** How often the red console alert repeats while an IP ban waits for approval. */
     private static final long REMIND_MS = 30 * 60_000L;
+    public static final String KIND_CHEATING = "cheating";
 
     /** One player waiting for the next ban wave. */
     public static final class Pending {
@@ -61,14 +62,21 @@ public final class BanManager implements Runnable, Listener {
         public final String report;
         public final long queuedMs;
         public final long executeMs;
+        /** "cheating" (ban wave) or "dupe/illegal items". */
+        public final String kind;
+        /** Waits for an admin (long-time player): never runs by itself. */
+        public final boolean review;
 
-        Pending(UUID uuid, String name, String reason, String report, long queuedMs, long executeMs) {
+        Pending(UUID uuid, String name, String reason, String report, long queuedMs, long executeMs, String kind,
+                boolean review) {
             this.uuid = uuid;
             this.name = name;
             this.reason = reason;
             this.report = report;
             this.queuedMs = queuedMs;
             this.executeMs = executeMs;
+            this.kind = kind;
+            this.review = review;
         }
     }
 
@@ -161,7 +169,7 @@ public final class BanManager implements Runnable, Listener {
             + (settings.banDelayMaxMs > settings.banDelayMinMs
             ? ThreadLocalRandom.current().nextLong(settings.banDelayMaxMs - settings.banDelayMinMs) : 0);
         String reason = verdict.reasons().isEmpty() ? "confirmed cheating" : String.join("; ", verdict.reasons());
-        Pending entry = new Pending(uuid, name, reason, reportFile, now, now + delay);
+        Pending entry = new Pending(uuid, name, reason, reportFile, now, now + delay, KIND_CHEATING, false);
         pending.put(uuid, entry);
         save();
         historyLine("QUEUED " + name + " for " + DATE.format(Instant.ofEpochMilli(entry.executeMs)) + ": " + reason);
@@ -218,21 +226,68 @@ public final class BanManager implements Runnable, Listener {
     public void run() {
         long now = System.currentTimeMillis();
         for (Pending entry : new ArrayList<>(pending.values())) {
-            if (now >= entry.executeMs) {
+            if (!entry.review && now >= entry.executeMs) {
                 execute(entry);
             }
         }
         expireApprovals(now);
-        if (!approvals.isEmpty() && now - lastReminderMs >= REMIND_MS) {
+        if (now - lastReminderMs >= REMIND_MS && (!approvals.isEmpty() || hasReviews())) {
             lastReminderMs = now;
             approvals.values().forEach(this::redAlert);
+            pending.values().stream().filter(p -> p.review).forEach(this::reviewAlert);
         }
     }
 
     private void execute(Pending entry) {
         pending.remove(entry.uuid);
         save();
-        executeBan(entry.uuid, entry.name, entry.reason, entry.report, "cheating", plugin.settings().banReason);
+        boolean cheating = KIND_CHEATING.equals(entry.kind);
+        executeBan(entry.uuid, entry.name, entry.reason, entry.report, entry.kind,
+            cheating ? plugin.settings().banReason : plugin.settings().dupeBanReason);
+    }
+
+    private boolean hasReviews() {
+        for (Pending entry : pending.values()) {
+            if (entry.review) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Long-time players are not banned by a machine alone: an admin confirms. */
+    private void reviewAlert(Pending entry) {
+        String[] lines = {
+            "================= NOVAGUARD: BAN NEEDS YOUR DECISION =================",
+            entry.name + " has played for " + playtimeHours(entry.uuid) + " hours, so they are not banned automatically.",
+            "Evidence: " + entry.reason,
+            entry.report.isEmpty() ? "" : "Report: plugins/NovaGuard/reports/" + entry.report,
+            "Ban (" + describeNextBan(entry.uuid) + "): ng bans now " + entry.name
+                + "    Do not ban: ng bans cancel " + entry.name,
+            "======================================================================"};
+        for (String line : lines) {
+            if (!line.isEmpty()) {
+                plugin.getLogger().severe(line);
+            }
+        }
+        for (Player staff : Bukkit.getOnlinePlayers()) {
+            if (staff.hasPermission("novaguard.admin")) {
+                for (String line : lines) {
+                    if (!line.isEmpty()) {
+                        staff.sendMessage(Component.text(line, NamedTextColor.RED));
+                    }
+                }
+            }
+        }
+    }
+
+    /** Hours on this server from the vanilla statistic (0 when unknown). */
+    public static long playtimeHours(UUID uuid) {
+        try {
+            return Bukkit.getOfflinePlayer(uuid).getStatistic(org.bukkit.Statistic.PLAY_ONE_MINUTE) / 72_000L;
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     /**
@@ -245,6 +300,21 @@ public final class BanManager implements Runnable, Listener {
             if (queued != null) {
                 save();
                 historyLine("QUEUED ban of " + name + " replaced by an immediate ban (" + kind + ")");
+            }
+            long reviewHours = plugin.settings().reviewAboveHours;
+            if (reviewHours > 0 && playtimeHours(uuid) >= reviewHours) {
+                long now = System.currentTimeMillis();
+                Pending review = new Pending(uuid, name, evidence, report == null ? "" : report, now, Long.MAX_VALUE,
+                    kind, true);
+                pending.put(uuid, review);
+                save();
+                historyLine("REVIEW NEEDED for " + name + " (" + playtimeHours(uuid) + " h played): " + evidence);
+                reviewAlert(review);
+                lastReminderMs = now;
+                plugin.notifier().send("NovaGuard: ban of " + name + " needs your decision",
+                    name + " (long-time player) would be banned for: " + evidence
+                        + "\nBan: ng bans now " + name + "   Do not ban: ng bans cancel " + name);
+                return;
             }
             executeBan(uuid, name, evidence, report == null ? "" : report, kind, plugin.settings().dupeBanReason);
         }));
@@ -291,7 +361,7 @@ public final class BanManager implements Runnable, Listener {
             redAlert(approval);
             lastReminderMs = now;
         } else {
-            applyIpAndAlts(name, ips, altAccounts, reason, duration, done);
+            applyIpAndAlts(uuid, name, ips, altAccounts, reason, duration, done);
         }
 
         String summary = name + " banned " + (days > 0 ? "for " + length : length) + " ("
@@ -340,12 +410,13 @@ public final class BanManager implements Runnable, Listener {
         return out;
     }
 
-    private void applyIpAndAlts(String name, List<String> ips, List<UUID> altAccounts, String reason,
+    private void applyIpAndAlts(UUID owner, String name, List<String> ips, List<UUID> altAccounts, String reason,
                                 Duration duration, List<String> done) {
         for (String ip : ips) {
             try {
                 InetAddress address = InetAddress.getByName(ip);
                 Bukkit.getBanList(BanListType.IP).addBan(address, reason, duration, "NovaGuard");
+                plugin.offenses().recordLinked(owner, "ip:" + ip);
                 kickAddress(address, reason);
                 done.add("IP " + ip);
             } catch (UnknownHostException e) {
@@ -354,8 +425,57 @@ public final class BanManager implements Runnable, Listener {
         }
         for (UUID alt : altAccounts) {
             banAccount(alt, reason + " (alt account of " + name + ")", duration);
+            plugin.offenses().recordLinked(owner, "alt:" + alt);
             done.add("alt " + plugin.alts().nameOf(alt));
         }
+    }
+
+    // ---------------------------------------------------------------- undo
+
+    /**
+     * Undoes a wrong ban completely: the account, every IP and alt banned with it, the waiting IP question and
+     * queued bans are lifted, and the ban is taken out of the history so the next ban is not longer because of it.
+     *
+     * @return what was undone, for the admin
+     */
+    public String unban(UUID uuid, String name, String admin) {
+        List<String> done = new ArrayList<>();
+        Bukkit.getBanList(BanListType.PROFILE).pardon(Bukkit.createProfile(uuid, name));
+        done.add("account " + name);
+        List<String> linked = plugin.offenses().removeLastBan(uuid);
+        for (String entry : linked == null ? List.<String>of() : linked) {
+            if (entry.startsWith("ip:")) {
+                String ip = entry.substring(3);
+                try {
+                    Bukkit.getBanList(BanListType.IP).pardon(InetAddress.getByName(ip));
+                    done.add("IP " + ip);
+                } catch (UnknownHostException e) {
+                    plugin.getLogger().warning("Could not unban IP " + ip + ": " + e.getMessage());
+                }
+            } else if (entry.startsWith("alt:")) {
+                try {
+                    UUID alt = UUID.fromString(entry.substring(4));
+                    Bukkit.getBanList(BanListType.PROFILE).pardon(Bukkit.createProfile(alt, plugin.alts().nameOf(alt)));
+                    done.add("alt " + plugin.alts().nameOf(alt));
+                } catch (IllegalArgumentException e) {
+                    plugin.getLogger().warning("Bad alt entry in offenses.yml: " + entry);
+                }
+            }
+        }
+        if (pending.remove(uuid) != null) {
+            save();
+            done.add("queued ban cancelled");
+        }
+        if (approvals.remove(uuid) != null) {
+            saveApprovals();
+            done.add("IP-ban question removed");
+        }
+        plugin.monitor().pardonItems(uuid);
+        String summary = String.join(", ", done) + (linked == null ? " (no NovaGuard ban was on record)"
+            : "; the ban was removed from the history, so the next ban starts lower again");
+        historyLine("UNBANNED by " + admin + ": " + name + ": " + summary);
+        plugin.getLogger().warning("Unban by " + admin + ": " + name + ": " + summary);
+        return summary;
     }
 
     // ---------------------------------------------------------------- IP ban approval
@@ -371,7 +491,7 @@ public final class BanManager implements Runnable, Listener {
         Settings settings = plugin.settings();
         Duration duration = approval.days > 0 ? Duration.ofDays(approval.days) : null;
         List<String> done = new ArrayList<>();
-        applyIpAndAlts(approval.name, approval.ips, approval.alts, settings.banReason
+        applyIpAndAlts(approval.uuid, approval.name, approval.ips, approval.alts, settings.banReason
             + (approval.days > 0 ? " - " + approval.days + " days" : ""), duration, done);
         String summary = String.join(", ", done);
         historyLine("APPROVED by " + admin + " for " + approval.name + ": " + summary);
@@ -531,7 +651,8 @@ public final class BanManager implements Runnable, Listener {
             try {
                 UUID uuid = UUID.fromString(key);
                 pending.put(uuid, new Pending(uuid, s.getString("name", key), s.getString("reason", ""),
-                    s.getString("report", ""), s.getLong("queued"), s.getLong("execute")));
+                    s.getString("report", ""), s.getLong("queued"), s.getLong("execute"),
+                    s.getString("kind", KIND_CHEATING), s.getBoolean("review")));
             } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Skipping bad entry in bans.yml: " + key);
             }
@@ -547,6 +668,8 @@ public final class BanManager implements Runnable, Listener {
             s.set("report", entry.report);
             s.set("queued", entry.queuedMs);
             s.set("execute", entry.executeMs);
+            s.set("kind", entry.kind);
+            s.set("review", entry.review);
         }
         try {
             Files.createDirectories(file.getParentFile().toPath());

@@ -6,6 +6,7 @@ import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.math.Box;
 import io.github.novablaze.novaguard.math.Geometry;
+import io.github.novablaze.novaguard.math.PositionHistory;
 import io.github.novablaze.novaguard.math.ReachMath;
 import io.github.novablaze.novaguard.movement.Exemptions;
 import io.papermc.paper.datacomponent.DataComponentTypes;
@@ -84,8 +85,12 @@ public final class CombatListener implements Listener {
         if (target instanceof LivingEntity living && (living.isGliding() || living.isRiptiding())) {
             return; // Elytra and riptide targets move too fast for any position-based check.
         }
+        boolean playerTarget = target instanceof Player;
         PlayerData targetData = target instanceof Player targetPlayer
             ? plugin.players().getIfPresent(targetPlayer.getUniqueId()) : null;
+        if (!playerTarget) {
+            plugin.mobs().noteHit(target, now);
+        }
         int ping = player.getPing();
         if (targetData != null && now - targetData.teleportedAtMs < 1000L + ping) {
             return;
@@ -93,16 +98,17 @@ public final class CombatListener implements Listener {
 
         Location eye = player.getEyeLocation();
         long window = lagWindow(ping);
-        Box seen = targetBox(target, targetData, eye, now, window);
+        Box seen = targetBox(target, targetData, plugin.mobs().history(target), eye, now, window);
         double distance = Geometry.distanceToBox(eye.getX(), eye.getY(), eye.getZ(), seen);
         double strictLimit = reachLimit(player, data, 0.0, now);
         double angle = angleToTarget(eye, seen, distance);
-        if (data.monitored) {
+        if (data.monitored && playerTarget) {
+            // Report statistics use PvP hits only: player positions are exact, mob positions are estimates.
             plugin.monitor().recordHit(player.getUniqueId(), distance, strictLimit, angle);
         }
 
         if (settings.enabled(CheckType.REACH)) {
-            if (failsReach(player, data, distance, strictLimit + settings.reachTolerance)) {
+            if (failsReach(player, data, distance, strictLimit + settings.reachTolerance, playerTarget)) {
                 block(event, data, CheckType.REACH);
                 return;
             }
@@ -188,11 +194,14 @@ public final class CombatListener implements Listener {
 
     /**
      * For players: the closest hitbox they had within the lag window (backtracking).
-     * For mobs: the current hitbox grown by how far the mob can move within the window.
+     * For mobs a player hit before: their recorded hitboxes too ({@link MobTracker}); otherwise (first hit) the
+     * current hitbox grown by how far the mob can move within the window.
      */
-    private static Box targetBox(Entity target, PlayerData targetData, Location eye, long now, long window) {
-        if (targetData != null && targetData.history.size() > 0) {
-            Box best = targetData.history.closestBox(eye.getX(), eye.getY(), eye.getZ(), now - window);
+    private static Box targetBox(Entity target, PlayerData targetData, PositionHistory mobHistory, Location eye,
+                                 long now, long window) {
+        PositionHistory history = targetData != null && targetData.history.size() > 0 ? targetData.history : mobHistory;
+        if (history != null) {
+            Box best = history.closestBox(eye.getX(), eye.getY(), eye.getZ(), now - window);
             Box current = toBox(target.getBoundingBox());
             double bestDistance = Geometry.distanceToBox(eye.getX(), eye.getY(), eye.getZ(), best);
             double currentDistance = Geometry.distanceToBox(eye.getX(), eye.getY(), eye.getZ(), current);
@@ -217,7 +226,8 @@ public final class CombatListener implements Listener {
         return ReachMath.limit(interaction, itemReach, itemMargin, tolerance);
     }
 
-    private boolean failsReach(Player player, PlayerData data, double distance, double limit) {
+    /** @param banEvidence false for mobs: their positions are recorded less precisely, so the hit is only blocked */
+    private boolean failsReach(Player player, PlayerData data, double distance, double limit, boolean banEvidence) {
         if (distance <= limit) {
             data.reachBuffer = Math.max(0, data.reachBuffer - 0.25);
             return false;
@@ -225,7 +235,8 @@ public final class CombatListener implements Listener {
         data.reachBuffer += 1;
         if (data.reachBuffer >= 2) {
             plugin.violations().flag(player, data, CheckType.REACH, 1.0,
-                String.format(Locale.ROOT, "%.2f blocks, limit %.2f", distance, limit));
+                String.format(Locale.ROOT, "%.2f blocks, limit %.2f%s", distance, limit, banEvidence ? "" : " (mob)"),
+                banEvidence);
         } else if (data.monitored) {
             plugin.monitor().recordNearMiss(player.getUniqueId(), CheckType.REACH);
         }
