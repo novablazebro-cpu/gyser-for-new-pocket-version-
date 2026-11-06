@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.command.Command;
+import org.bukkit.command.PluginIdentifiableCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -30,7 +33,8 @@ import org.bukkit.plugin.Plugin;
  * <ol>
  *   <li>The login plugin's own API, when NovaGuard knows it (AuthMe, nLogin, LoginSecurity, LibreLogin). Exact,
  *       including automatic logins (FastLogin premium players, sessions).</li>
- *   <li>Any other login plugin: {@value #AFTER_COMMAND_MS} ms after the player typed /login, /register...</li>
+ *   <li>Any other login plugin: {@value #AFTER_COMMAND_MS} ms after the player typed /login, /register..., or
+ *       as soon as they walked 5 blocks away from where they joined (frozen players cannot).</li>
  *   <li>Always: {@code login-plugins.max-wait-seconds} after joining, so a broken API can never switch the
  *       anti-cheat off for a player.</li>
  * </ol>
@@ -43,6 +47,11 @@ public final class LoginGate implements Listener {
     static final long AFTER_COMMAND_MS = 3000;
     private static final long GRACE_AFTER_LOGIN_MS = 3000;
     private static final long POLL_MS = 250;
+    /**
+     * Without an API: a player who walked this far from where they joined is not frozen any more (automatic login,
+     * or a login NovaGuard did not see), so checks start. Login plugins hold frozen players in place.
+     */
+    private static final double FREE_DISTANCE_SQ = 5.0 * 5.0;
 
     /** Asks a login plugin whether a player is logged in. */
     @FunctionalInterface
@@ -52,11 +61,16 @@ public final class LoginGate implements Listener {
 
     private static final class Wait {
         final long deadlineMs;
+        final Location start;
+        /** First login after joining (a re-login after /logout gets no extra grace: no free grace by looping). */
+        final boolean afterJoin;
         long releaseAtMs = Long.MAX_VALUE;
         long lastPollMs;
 
-        Wait(long deadlineMs) {
+        Wait(long deadlineMs, Location start, boolean afterJoin) {
             this.deadlineMs = deadlineMs;
+            this.start = start;
+            this.afterJoin = afterJoin;
         }
     }
 
@@ -112,12 +126,20 @@ public final class LoginGate implements Listener {
         if (wait == null) {
             return false;
         }
+        if (walkedAway(player, wait)) {
+            // Moving freely: not frozen, no login teleport is coming, so no extra grace.
+            waits.remove(player.getUniqueId());
+            data.resetMovement(player.getLocation(), now);
+            return false;
+        }
         if (now >= wait.releaseAtMs || now >= wait.deadlineMs || polledLoggedIn(player, wait, now)) {
             waits.remove(player.getUniqueId());
             // The login plugin may still teleport the player back to where they left: start fresh from here.
             data.resetMovement(player.getLocation(), now);
-            data.speedBudget.fill(now);
-            data.grace(now, GRACE_AFTER_LOGIN_MS + player.getPing());
+            if (wait.afterJoin) {
+                data.speedBudget.fill(now);
+                data.grace(now, GRACE_AFTER_LOGIN_MS + player.getPing());
+            }
             return false;
         }
         return true;
@@ -130,7 +152,7 @@ public final class LoginGate implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void onJoin(PlayerJoinEvent event) {
         if (active()) {
-            start(event.getPlayer(), System.currentTimeMillis());
+            start(event.getPlayer(), System.currentTimeMillis(), true);
         }
     }
 
@@ -143,7 +165,12 @@ public final class LoginGate implements Listener {
         Player player = event.getPlayer();
         long now = System.currentTimeMillis();
         if (LoginRules.isLogoutCommand(event.getMessage())) {
-            start(player, now);
+            // Only a real /logout of the login plugin, and only for a logged-in player: otherwise typing "/logout"
+            // again and again would keep the anti-cheat off (or keep giving the after-login grace).
+            if (!waits.containsKey(player.getUniqueId())
+                && ownedByLoginPlugin(LoginRules.commandName(event.getMessage()))) {
+                start(player, now, false);
+            }
             return;
         }
         Wait wait = waits.get(player.getUniqueId());
@@ -179,8 +206,29 @@ public final class LoginGate implements Listener {
         return settings.loginEnabled && !found.isEmpty();
     }
 
-    private void start(Player player, long now) {
-        waits.put(player.getUniqueId(), new Wait(now + plugin.settings().loginMaxWaitMs));
+    private void start(Player player, long now, boolean afterJoin) {
+        waits.put(player.getUniqueId(),
+            new Wait(now + plugin.settings().loginMaxWaitMs, player.getLocation(), afterJoin));
+    }
+
+    /** Only without an API (an API answer is exact; some login plugins let frozen players walk a little). */
+    private boolean walkedAway(Player player, Wait wait) {
+        if (probe != null) {
+            return false;
+        }
+        Location now = player.getLocation();
+        if (now.getWorld() != wait.start.getWorld()) {
+            return false; // Login plugins often teleport to a login world/spawn; the teleport grace covers it.
+        }
+        return now.distanceSquared(wait.start) > FREE_DISTANCE_SQ;
+    }
+
+    private boolean ownedByLoginPlugin(String commandName) {
+        if (commandName == null) {
+            return false;
+        }
+        Command command = Bukkit.getCommandMap().getCommand(commandName);
+        return command instanceof PluginIdentifiableCommand owned && found.contains(owned.getPlugin().getName());
     }
 
     private boolean polledLoggedIn(Player player, Wait wait, long now) {

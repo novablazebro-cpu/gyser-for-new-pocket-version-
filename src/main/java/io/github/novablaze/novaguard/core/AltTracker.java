@@ -44,8 +44,14 @@ public final class AltTracker {
         }
         String ip = socket.getAddress().getHostAddress();
         UUID uuid = player.getUniqueId();
+        Set<UUID> accounts = accountsByIp.computeIfAbsent(ip, k -> new LinkedHashSet<>());
+        if (isShared(ip) && !accounts.contains(uuid)) {
+            // Already shared (never linked or banned): more accounts change nothing. Not storing them keeps a bot
+            // joining with thousands of names from one IP from growing alts.yml forever.
+            return;
+        }
         String previousName = names.put(uuid, player.getName());
-        boolean added = accountsByIp.computeIfAbsent(ip, k -> new LinkedHashSet<>()).add(uuid);
+        boolean added = accounts.add(uuid);
         added |= ipsByAccount.computeIfAbsent(uuid, k -> new LinkedHashSet<>()).add(ip);
         dirty |= added || !player.getName().equals(previousName);
     }
