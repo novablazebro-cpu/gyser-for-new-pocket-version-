@@ -38,9 +38,15 @@ public final class Exemptions {
         }
     }
 
-    /** Common skips: Bedrock (unless monitored in shadow mode), bypass permission, creative/spectator, dead, manual /novaguard exempt. */
+    /**
+     * Common skips: Bedrock (unless monitored in shadow mode), bypass permission, creative/spectator, dead, manual
+     * /novaguard exempt, and players a login plugin still holds frozen (they can hang in the air).
+     */
     public boolean skipAll(Player player, PlayerData data, long now) {
         if ((data.bedrock && !data.shadow) || now < data.manualExemptUntilMs || player.isDead()) {
+            return true;
+        }
+        if (plugin.login().waiting(player, data, now)) {
             return true;
         }
         GameMode mode = player.getGameMode();

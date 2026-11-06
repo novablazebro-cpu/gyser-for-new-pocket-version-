@@ -4,7 +4,7 @@ main: io.github.novablaze.novaguard.NovaGuardPlugin
 api-version: '26.3'
 description: Lightweight, lag-safe anti-cheat and anti-dupe for Paper 26.3.
 authors: [Nova]
-softdepend: [floodgate, Geyser-Spigot]
+softdepend: [floodgate, Geyser-Spigot, AuthMe, nLogin, LoginSecurity, OpeNLogin, LibreLogin, JPremium, FastLogin]
 permissions:
   novaguard.admin:
     description: Every staff command (/novaguard ..., /monitor ...), red ban/IP alerts, and alerts.

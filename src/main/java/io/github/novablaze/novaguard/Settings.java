@@ -39,6 +39,10 @@ public final class Settings {
     public final double minTpsForMovement;
     public final int maxPingForMovement;
 
+    public final boolean loginEnabled;
+    public final long loginMaxWaitMs;
+    public final java.util.Set<String> loginExtraCommands;
+
     public final boolean kickEnabled;
     public final int kickMaxPing;
     public final double kickMinTps;
@@ -155,6 +159,17 @@ public final class Settings {
         spikeGraceMs = Math.max(0, c.getLong("lag.spike-grace-ms", 1500));
         minTpsForMovement = c.getDouble("lag.min-tps-for-movement", 18.0);
         maxPingForMovement = c.getInt("lag.max-ping-for-movement", 1000);
+
+        loginEnabled = c.getBoolean("login-plugins.enabled", true);
+        loginMaxWaitMs = Math.min(600, Math.max(10, c.getLong("login-plugins.max-wait-seconds", 120))) * 1000L;
+        java.util.Set<String> extra = new java.util.HashSet<>();
+        for (String command : c.getStringList("login-plugins.extra-commands")) {
+            String name = io.github.novablaze.novaguard.math.LoginRules.commandName(command);
+            if (name != null) {
+                extra.add(name);
+            }
+        }
+        loginExtraCommands = java.util.Set.copyOf(extra);
 
         kickEnabled = c.getBoolean("kick.enabled", true);
         kickMaxPing = c.getInt("kick.max-ping", 400);

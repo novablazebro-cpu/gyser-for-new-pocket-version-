@@ -41,6 +41,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private PlayerDataManager players;
     private ViolationManager violations;
     private Exemptions exemptions;
+    private io.github.novablaze.novaguard.core.LoginGate login;
     private ItemFingerprints fingerprints;
     private MonitorManager monitor;
     private Safety safety;
@@ -70,6 +71,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         lag = new LagMonitor();
         players = new PlayerDataManager(new BedrockDetector(getLogger()));
         violations = new ViolationManager(this);
+        login = new io.github.novablaze.novaguard.core.LoginGate(this);
         exemptions = new Exemptions(this);
         fingerprints = new ItemFingerprints(this);
         monitor = new MonitorManager(this);
@@ -85,6 +87,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         MovementListener movement = new MovementListener(this);
         dupeListener = new DupeListener(this);
         PluginManager pluginManager = getServer().getPluginManager();
+        pluginManager.registerEvents(login, this);
         pluginManager.registerEvents(new GraceListener(this), this);
         pluginManager.registerEvents(movement, this);
         pluginManager.registerEvents(new CombatListener(this), this);
@@ -93,6 +96,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(bans, this);
         pluginManager.registerEvents(cleaner, this);
 
+        // After every plugin is enabled (login plugins may load after NovaGuard).
+        Bukkit.getScheduler().runTask(this, () -> safety.run("login-plugins", login::detect));
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("mob-tracker", mobs), 1L, 1L);
         Bukkit.getScheduler().runTaskTimer(this, cleaner, 1L, 1L);
@@ -218,6 +223,10 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public Exemptions exemptions() {
         return exemptions;
+    }
+
+    public io.github.novablaze.novaguard.core.LoginGate login() {
+        return login;
     }
 
     public Safety safety() {

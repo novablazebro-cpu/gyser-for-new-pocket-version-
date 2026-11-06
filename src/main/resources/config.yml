@@ -31,6 +31,18 @@ lag:
   # Movement checks pause for players with a ping above this (ms).
   max-ping-for-movement: 1000
 
+# Login plugins (AuthMe, nLogin, LoginSecurity, LibreLogin, JPremium, FastLogin...) are found automatically.
+# Cracked players are frozen until they type /login; a frozen player can hang in the air (they left while
+# jumping), which looks like flying. Players are not checked at all until they have logged in.
+# AuthMe, nLogin, LoginSecurity and LibreLogin are asked directly (also automatic logins of premium/Bedrock
+# players). For other login plugins a player counts as logged in 3 seconds after /login, /register, /l, /reg...
+login-plugins:
+  enabled: true
+  # Checks start anyway this long after joining (10-600), even if the login plugin never says "logged in".
+  max-wait-seconds: 120
+  # Login commands of your login plugin with other names (for example a translated "/entrar").
+  extra-commands: []
+
 kick:
   # Only used when ban-waves are disabled (a kick would tell a cheater that they were detected).
   enabled: true

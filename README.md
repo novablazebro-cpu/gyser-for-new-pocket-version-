@@ -9,6 +9,9 @@ servers that also run Geyser/Floodgate.
 - **Modern combat aware:** spears (4.5-block reach read from the item itself), mace, lunge, wind charges and
   attribute swapping are all legit and are not punished.
 - **Bedrock players** (Floodgate) are skipped by every anti-cheat check. Anti-dupe still protects everyone.
+- **Login plugins** (AuthMe, nLogin, LoginSecurity, LibreLogin, JPremium, FastLogin, or any plugin with "login" or
+  "auth" in its name) are found automatically. A player who has not logged in yet is frozen and can hang in the air,
+  so nothing is checked until they have logged in (config: `login-plugins`).
 
 ## Install
 
