@@ -199,6 +199,9 @@ anti-dupe:
   fix-overstacked: true
   # Close donkey/llama/chest-boat/minecart inventories when the entity dies, teleports or is far away.
   entity-container-guard: true
+  # Block clicks in a chest/barrel/shulker window whose block was broken, moved or is far away (the
+  # "break the chest while it is open" dupes). Plugin menus are never affected.
+  block-container-guard: true
   fingerprints:
     enabled: true
     # Delete the extra copy of a duplicated item (only when both copies are in the same scan).

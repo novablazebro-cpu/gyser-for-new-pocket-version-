@@ -95,6 +95,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         registerCommand("novaguard", "NovaGuard anti-cheat", List.of("ng"), new NovaGuardCommand(this));
         registerCommand("monitor", "Watch a player for a few days and write a cheat report", List.of("ngmonitor"),
             new MonitorCommand(this));
+        dupeListener.auditPaperConfig();
         getLogger().info("NovaGuard enabled: lag-safe checks and anti-dupe are active.");
     }
 

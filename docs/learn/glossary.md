@@ -52,3 +52,7 @@
 | Separation of concerns | Splitting "deciding" from "doing" into different classes so each is small and testable. | `EnchantmentRules` decides, `EnchantmentGuard` edits items |
 | Data component | A piece of an item's data (enchantments, shulker contents...) in modern Minecraft. | `DataComponentTypes.ENCHANTMENTS` |
 | End-to-end test | Running the real program (here a real Paper server) to check a whole flow, not just one function. | Ban -> red alert -> `ng approve` -> IP in `banned-ips.json` |
+| Defense in depth | Several independent layers of protection, so one hole does not let an attack through. | Anti-dupe layers in `dupe/DupeListener.java` |
+| Zero-day | A bug that attackers know before the developers do, so no fix exists yet. | Why no anti-dupe can promise "every dupe" |
+| Invariant | A rule that must always be true, e.g. "one item ID exists only once". Breaking it proves a bug. | `dupe/ItemFingerprints.java` |
+| Config audit | A check that reads settings and warns when one is unsafe. | `dupe/ConfigRisks.java`, `DUPE RISK` lines |

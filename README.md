@@ -127,6 +127,25 @@ The famous "Flying is not enabled on this server" kick (after TNT, pistons, slim
 with lag compensation and launch-momentum tracking, so set `allow-flight=true`. This does not let anyone fly;
 it only turns off vanilla's kick.
 
+## How the anti-dupe works (and its honest limit)
+
+No plugin can promise that *every* dupe is impossible: new dupes are bugs nobody has found yet, and many
+dupes are bugs inside the server itself that only a Paper update can fix. NovaGuard therefore works in
+layers, so a dupe has to get past all of them:
+
+1. **Paper's own fixes stay on.** At startup NovaGuard reads Paper's config and prints a red `DUPE RISK`
+   line for every setting that re-opens a known dupe (piston/TNT duplication, headless pistons, permanent
+   block-break exploits, unsafe end portal teleport, disabled packet limiter, `duplicate-uuid` mode
+   `NOTHING`/`WARN`). With all safe it prints "Paper's built-in dupe fixes are all switched on."
+2. **Containers that no longer exist.** Clicks are blocked in donkey/llama/chest-boat/minecart windows whose
+   entity died, teleported or is far away, and in chest/barrel/shulker windows whose block was broken,
+   pushed or replaced. Hoppers cannot move items into or out of a removed entity or pick up a removed item.
+3. **Impossible items are repaired.** Overstacked stacks are trimmed; illegal enchantments are removed.
+4. **Unknown dupes are still caught afterwards.** Valuable items get a hidden ID; two copies of one ID prove a
+   dupe whatever method was used, and staff are alerted.
+
+Keep Paper updated: that is where server-side dupes get fixed.
+
 ## Recommended Paper settings against dupes
 
 Paper already blocks most dupes. Check these are still at their safe defaults in `config/paper-global.yml`:

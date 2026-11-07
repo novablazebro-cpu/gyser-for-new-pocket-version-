@@ -103,6 +103,7 @@ public final class Settings {
     public final boolean dupeEnabled;
     public final boolean fixOverstacked;
     public final boolean entityContainerGuard;
+    public final boolean blockContainerGuard;
     public final boolean fingerprintsEnabled;
     public final boolean removeDuplicates;
     public final long fingerprintScanTicks;
@@ -205,6 +206,7 @@ public final class Settings {
         dupeEnabled = c.getBoolean("anti-dupe.enabled", true);
         fixOverstacked = c.getBoolean("anti-dupe.fix-overstacked", true);
         entityContainerGuard = c.getBoolean("anti-dupe.entity-container-guard", true);
+        blockContainerGuard = c.getBoolean("anti-dupe.block-container-guard", true);
         fingerprintsEnabled = c.getBoolean("anti-dupe.fingerprints.enabled", true);
         removeDuplicates = c.getBoolean("anti-dupe.fingerprints.remove-duplicates", false);
         fingerprintScanTicks = Math.max(10, c.getLong("anti-dupe.fingerprints.scan-interval-seconds", 60)) * 20L;

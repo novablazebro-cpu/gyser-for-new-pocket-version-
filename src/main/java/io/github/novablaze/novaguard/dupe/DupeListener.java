@@ -3,7 +3,16 @@ package io.github.novablaze.novaguard.dupe;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
 import java.util.ArrayList;
+import java.io.File;
+import java.util.List;
+import java.util.function.Function;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.Container;
+import org.bukkit.block.DoubleChest;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Item;
@@ -19,6 +28,8 @@ import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
@@ -27,7 +38,18 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
-/** Anti-dupe: overstacked items, entity-container dupes, and fingerprint scans. */
+/**
+ * Anti-dupe, in layers (no single layer can stop every dupe, together they close the known kinds):
+ * <ol>
+ *   <li>Paper's own fixes stay on: {@link #auditPaperConfig()} warns when a setting re-opens a dupe.</li>
+ *   <li>Containers that no longer exist: entity inventories (donkey, chest boat, minecart) and block
+ *       inventories (chest, shulker, barrel) that were broken, moved or are far away cannot be clicked,
+ *       and hoppers cannot move items into or out of a dead entity.</li>
+ *   <li>Impossible items are repaired: overstacked stacks are trimmed.</li>
+ *   <li>Unknown dupes are still caught afterwards: valuable items carry a hidden ID
+ *       ({@link ItemFingerprints}), and two copies of one ID prove a dupe whatever the method was.</li>
+ * </ol>
+ */
 public final class DupeListener implements Listener, Runnable {
 
     private static final double MAX_CONTAINER_DISTANCE_SQUARED = 8 * 8;
@@ -38,26 +60,32 @@ public final class DupeListener implements Listener, Runnable {
         this.plugin = plugin;
     }
 
-    // ---- Entity containers (donkey, llama, mule, chest boat, chest/hopper minecart) ----
+    // ---- Containers that no longer exist (entity: donkey, llama, chest boat, minecart; block: chest, shulker...) ----
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onClick(InventoryClickEvent event) {
         plugin.safety().run("anti-dupe",
-            () -> guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
+            () -> guardContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
         plugin.safety().run("anti-dupe",
-            () -> guardEntityContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
+            () -> guardContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
     }
 
-    private void guardEntityContainer(HumanEntity viewer, Inventory top, Cancellable event) {
+    private void guardContainer(HumanEntity viewer, Inventory top, Cancellable event) {
         Settings settings = plugin.settings();
-        if (!settings.dupeEnabled || !settings.entityContainerGuard) {
+        if (!settings.dupeEnabled) {
             return;
         }
         InventoryHolder holder = top.getHolder(false);
+        if (settings.blockContainerGuard && guardBlockContainer(viewer, holder, event)) {
+            return;
+        }
+        if (!settings.entityContainerGuard) {
+            return;
+        }
         if (!(holder instanceof Entity entity) || holder instanceof HumanEntity) {
             return;
         }
@@ -71,6 +99,102 @@ public final class DupeListener implements Listener, Runnable {
         plugin.violations().dupeAlert(viewer.getName(),
             "used the inventory of a " + entity.getType().name().toLowerCase(java.util.Locale.ROOT)
                 + " that is dead, gone or far away (blocked)");
+    }
+
+    /**
+     * A chest, barrel or shulker box whose block is gone (broken, exploded, pushed, replaced) or far away
+     * while its window is still open. Clicking it anyway is how "break the chest while it is open" and
+     * remote-container dupes work. Plugin menus have no block holder and are never touched.
+     *
+     * @return true when the click was blocked
+     */
+    private boolean guardBlockContainer(HumanEntity viewer, InventoryHolder holder, Cancellable event) {
+        BlockState[] halves;
+        if (holder instanceof DoubleChest chest
+            && chest.getLeftSide(false) instanceof BlockState left
+            && chest.getRightSide(false) instanceof BlockState right) {
+            halves = new BlockState[] {left, right};
+        } else if (holder instanceof BlockState state) {
+            halves = new BlockState[] {state};
+        } else {
+            return false;
+        }
+        for (BlockState state : halves) {
+            Block block = state.getBlock();
+            boolean broken = block.getWorld() != viewer.getWorld()
+                || block.getType() != state.getType()
+                || !(block.getState(false) instanceof Container)
+                || block.getLocation().add(0.5, 0.5, 0.5).distanceSquared(viewer.getLocation())
+                    > MAX_CONTAINER_DISTANCE_SQUARED;
+            if (broken) {
+                event.setCancelled(true);
+                Bukkit.getScheduler().runTask(plugin, () -> viewer.closeInventory());
+                plugin.violations().dupeAlert(viewer.getName(), "used the inventory of a "
+                    + state.getType().name().toLowerCase(java.util.Locale.ROOT)
+                    + " that is broken, moved or far away (blocked)");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Hoppers and hopper minecarts may not move items into or out of an entity that is dead or removed. */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onMove(InventoryMoveItemEvent event) {
+        Settings settings = plugin.settings();
+        if (settings.dupeEnabled && settings.entityContainerGuard
+            && (deadEntity(event.getSource()) || deadEntity(event.getDestination()))) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** A hopper may not pick up an item entity that was already removed (picked up or merged elsewhere). */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onHopperPickup(InventoryPickupItemEvent event) {
+        Settings settings = plugin.settings();
+        if (settings.dupeEnabled && settings.entityContainerGuard
+            && (!event.getItem().isValid() || deadEntity(event.getInventory()))) {
+            event.setCancelled(true);
+        }
+    }
+
+    private static boolean deadEntity(Inventory inventory) {
+        return inventory.getHolder(false) instanceof Entity entity && !(entity instanceof HumanEntity)
+            && (!entity.isValid() || entity.isDead());
+    }
+
+    // ---- Paper settings ----
+
+    /**
+     * Warns in red (once, at startup) about every Paper setting that switches off one of Paper's own dupe
+     * fixes. NovaGuard cannot patch the server, so the honest thing is to tell the admin.
+     *
+     * @return how many risky settings were found
+     */
+    public int auditPaperConfig() {
+        int found = report("config/paper-global.yml", new File("config", "paper-global.yml"), true);
+        found += report("config/paper-world-defaults.yml", new File("config", "paper-world-defaults.yml"), false);
+        for (World world : Bukkit.getWorlds()) {
+            File own = new File(world.getWorldFolder(), "paper-world.yml");
+            found += report(world.getName() + "/paper-world.yml", own, false);
+        }
+        if (found == 0) {
+            plugin.getLogger().info("Paper's built-in dupe fixes are all switched on.");
+        }
+        return found;
+    }
+
+    private int report(String name, File file, boolean global) {
+        if (!file.isFile()) {
+            return 0;
+        }
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
+        Function<String, Object> get = yaml::get;
+        List<String> risks = global ? ConfigRisks.global(get) : ConfigRisks.world(get);
+        for (String risk : risks) {
+            plugin.getLogger().severe("DUPE RISK in " + name + ": " + risk);
+        }
+        return risks.size();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
