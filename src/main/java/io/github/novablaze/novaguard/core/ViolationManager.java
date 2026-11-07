@@ -55,9 +55,22 @@ public final class ViolationManager {
      * @return true when the check should now block the cheat (see {@link #enforces})
      */
     public boolean flag(Player player, PlayerData data, CheckType type, double amount, String detail) {
+        return flag(player, data, type, amount, detail, true);
+    }
+
+    /**
+     * @param evidence false for flags that can also be caused by a frozen connection: they are logged and
+     *                 alerted, but never count towards a ban
+     */
+    public boolean flag(Player player, PlayerData data, CheckType type, double amount, String detail,
+                        boolean evidence) {
         Settings settings = plugin.settings();
         long now = System.currentTimeMillis();
-        if (data.monitored) {
+        boolean silent = settings.check(type).silent();
+        // Silent checks only log and alert. Lag, a fresh join, or a session that has not logged in yet
+        // (cracked servers) never feed a ban either.
+        boolean counts = evidence && !silent && countsAsEvidence(player, data, now);
+        if (data.monitored && counts) {
             plugin.monitor().recordFlag(player.getUniqueId(), type);
         }
         if (data.shadow) {
@@ -68,7 +81,6 @@ public final class ViolationManager {
         plugin.flagStats().record(type, now);
         double vl = data.violations.add(type, amount);
         int ping = player.getPing();
-        boolean silent = settings.check(type).silent();
         String line = String.format(Locale.ROOT, "%s failed %s (%s) VL %.1f ping %dms tps %.1f%s",
             player.getName(), type.displayName(), detail, vl, ping, plugin.lag().tps(), silent ? " [silent]" : "");
 
@@ -87,14 +99,14 @@ public final class ViolationManager {
         checkSpike(type, now);
 
         double suspectVl = settings.check(type).suspectVl();
-        if (settings.banWaves && suspectVl > 0 && vl >= suspectVl) {
+        if (counts && settings.banWaves && suspectVl > 0 && vl >= suspectVl) {
             plugin.bans().suspect(player, data, type, vl);
         }
 
         double kickVl = settings.check(type).kickVl();
         // With ban waves a kick would tell the cheater they were caught: checks that feed the ban wave never kick.
         boolean banWaveHandles = settings.banWaves && suspectVl > 0 && !data.bedrock;
-        if (!banWaveHandles && kickVl > 0 && vl >= kickVl && kickAllowed(player, data, now)) {
+        if (!silent && !banWaveHandles && kickVl > 0 && vl >= kickVl && kickAllowed(player, data, now)) {
             data.violations.reset(type);
             String reason = type.displayName();
             log(player.getName() + " was kicked for " + reason + " (VL " + String.format(Locale.ROOT, "%.1f", vl) + ")");
@@ -148,6 +160,19 @@ public final class ViolationManager {
         }
     }
 
+    /**
+     * May this flag count towards a ban? Not while the server lags, during a lag spike or right after joining
+     * (the same guards as kicks), and not before the player has logged in. Ping is deliberately not used:
+     * PingSpoof cheats fake it.
+     */
+    public boolean countsAsEvidence(Player player, PlayerData data, long now) {
+        Settings settings = plugin.settings();
+        return plugin.lag().tps() >= settings.kickMinTps
+            && now - data.joinMs >= settings.kickJoinGraceMs
+            && now >= data.lagSpikeUntilMs
+            && Trust.loggedIn(player, data, settings.altsRecordAfterSeconds, now);
+    }
+
     /** Kicks only happen when lag cannot be the reason for the violations. */
     private boolean kickAllowed(Player player, PlayerData data, long now) {
         Settings settings = plugin.settings();
@@ -160,7 +185,14 @@ public final class ViolationManager {
 
     /** Anti-dupe alert: not tied to a check VL, never kicks. */
     public void dupeAlert(String playerName, String detail) {
-        plugin.monitor().recordDupe(playerName);
+        dupeAlert(playerName, detail, true);
+    }
+
+    /** @param evidence false when it is unclear who duped: nobody's monitor report counts it */
+    public void dupeAlert(String playerName, String detail, boolean evidence) {
+        if (evidence) {
+            plugin.monitor().recordDupe(playerName);
+        }
         String line = playerName + " dupe alert: " + detail;
         log(line);
         alert(playerName, CheckType.DUPE.displayName(), detail, -1, -1);

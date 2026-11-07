@@ -37,7 +37,7 @@ public final class MonitorManager implements Runnable {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         .withZone(ZoneId.systemDefault());
-    private static final DateTimeFormatter FILE_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm")
+    private static final DateTimeFormatter FILE_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")
         .withZone(ZoneId.systemDefault());
     private static final int SAVE_EVERY_MINUTES = 5;
 
@@ -74,7 +74,7 @@ public final class MonitorManager implements Runnable {
         if (online != null) {
             PlayerData data = plugin.players().get(online);
             record.bedrock = data.bedrock;
-            beginSession(record, online, data, now);
+            beginSession(record, online, data, now, true);
             typeNote = data.bedrock ? "Bedrock (Floodgate)" : "Java (cracked/offline)";
         } else {
             record.bedrock = BedrockDetector.isFloodgateUuid(uuid);
@@ -203,6 +203,11 @@ public final class MonitorManager implements Runnable {
     // ---------------------------------------------------------------- join / quit
 
     public void onJoin(Player player, PlayerData data) {
+        onJoin(player, data, false);
+    }
+
+    /** @param resumed the player was already online (plugin reload): same session, not a new one */
+    public void onJoin(Player player, PlayerData data, boolean resumed) {
         MonitorRecord record = records.get(player.getUniqueId());
         if (record == null) {
             return;
@@ -215,7 +220,7 @@ public final class MonitorManager implements Runnable {
             Bukkit.getScheduler().runTaskLater(plugin, () -> kick(player), 60L);
             return;
         }
-        beginSession(record, player, data, System.currentTimeMillis());
+        beginSession(record, player, data, System.currentTimeMillis(), !resumed);
     }
 
     public void onQuit(Player player) {
@@ -227,8 +232,10 @@ public final class MonitorManager implements Runnable {
         }
     }
 
-    private void beginSession(MonitorRecord record, Player player, PlayerData data, long now) {
-        record.sessions++;
+    private void beginSession(MonitorRecord record, Player player, PlayerData data, long now, boolean newSession) {
+        if (newSession) {
+            record.sessions++;
+        }
         record.lastSeenMs = now;
         data.monitored = true;
         data.shadow = data.bedrock;

@@ -54,7 +54,7 @@ public final class MovementListener implements Listener, Runnable {
         data.history.add(now, Box.ofEntity(to.getX(), to.getY(), to.getZ(), player.getWidth(), player.getHeight()));
         data.trace.add(now, to.getX(), to.getY(), to.getZ(), player.isOnGround());
         trackKnockback(player, data, to.getX() - from.getX(), to.getZ() - from.getZ(), now);
-        if (data.monitored && now >= data.graceUntilMs) {
+        if (data.monitored && now >= data.graceUntilMs && plugin.violations().countsAsEvidence(player, data, now)) {
             plugin.monitor().recordRotation(player.getUniqueId(), from.getPitch(), to.getPitch());
         }
 
@@ -97,10 +97,18 @@ public final class MovementListener implements Listener, Runnable {
         if (enforce) {
             setback(event, data, now);
         } else if (speedFailed || flyFailed) {
-            // Silent or shadow mode: no rubberband, but tracking restarts as after a setback,
-            // so one cheat is counted once instead of on every move.
-            data.resetMovement(to, now);
-            data.speedBudget.empty(now);
+            // Silent or shadow mode: no rubberband. Only the check that failed restarts its tracking, so one
+            // cheat is counted once instead of on every move, while the other checks keep their state (a
+            // silent Speed check must not wipe the Fly and NoFall tracking).
+            if (speedFailed) {
+                data.speedBudget.empty(now);
+            }
+            if (flyFailed) {
+                data.groundY = to.getY();
+                data.hoverCheckpointMs = now;
+                data.hoverCheckpointY = to.getY();
+                data.momentum.stop();
+            }
         } else if (env.grounded() || env.supported()) {
             data.lastGood = to.clone();
         }
@@ -423,7 +431,7 @@ public final class MovementListener implements Listener, Runnable {
                 continue;
             }
             plugin.violations().flag(player, data, CheckType.FLY, 0.5,
-                "hovering while standing still (no setback: could also be a frozen connection)");
+                "hovering while standing still (no setback: could also be a frozen connection)", false);
             // Re-arm without touching lastGood: the hover spot must never become a "legit" setback position.
             data.airborne = false;
         }

@@ -66,7 +66,8 @@ public final class CombatListener implements Listener {
         }
         boolean spearJab = isSpearLike(player.getInventory().getItemInMainHand());
         Settings settings = plugin.settings();
-        if (data.monitored) {
+        boolean evidence = data.monitored && plugin.violations().countsAsEvidence(player, data, now);
+        if (evidence) {
             plugin.monitor().recordAttack(player.getUniqueId(), now);
         }
 
@@ -106,7 +107,7 @@ public final class CombatListener implements Listener {
         double distance = Geometry.distanceToBox(eye.getX(), eye.getY(), eye.getZ(), seen);
         double strictLimit = reachLimit(player, data, 0.0, now);
         double angle = angleToTarget(eye, seen, distance);
-        if (data.monitored) {
+        if (evidence) {
             plugin.monitor().recordHit(player.getUniqueId(), distance, strictLimit, angle);
         }
 
@@ -316,9 +317,11 @@ public final class CombatListener implements Listener {
             return true;
         }
         World world = eye.getWorld();
-        // Collision shapes, passable blocks (grass, flowers) ignored: hitting through grass is legit.
+        // The block OUTLINE, like vanilla's attack targeting: a fence or wall is 1 block high here, not its
+        // 1.5-block collision box. Blocks without collision (grass, flowers) are ignored: hitting through
+        // them is legit.
         return world.rayTraceBlocks(eye, direction.multiply(1.0 / length), length - 0.05,
-            FluidCollisionMode.NEVER, true) == null;
+            FluidCollisionMode.NEVER, false, block -> !block.isPassable()) == null;
     }
 
     private static Box toBox(BoundingBox box) {

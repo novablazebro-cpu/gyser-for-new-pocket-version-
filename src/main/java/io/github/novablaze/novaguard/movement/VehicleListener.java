@@ -3,25 +3,26 @@ package io.github.novablaze.novaguard.movement;
 import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.core.PlayerData;
-import org.bukkit.Location;
+import org.bukkit.Bukkit;
 import org.bukkit.Tag;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HappyGhast;
 import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Vehicle;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
-import org.bukkit.event.Listener;
-import org.bukkit.event.vehicle.VehicleMoveEvent;
+import org.bukkit.util.BoundingBox;
 
 /**
  * BoatFly / HorseFly / EntityFly: a player-steered vehicle that stays in the air without falling. Boats,
- * minecarts, horses, camels, pigs and striders all fall when nothing is under them; a horse jump is over in
- * well under a second. The server moves the vehicle itself when the rider steers it, so its "on ground" is
- * the server's own view, not the client's claim.
+ * minecarts, horses, camels, pigs and striders all fall when nothing holds them up; a horse jump is over in
+ * well under a second.
+ *
+ * <p>Runs every tick over riding players instead of listening to VehicleMoveEvent: that event never fires
+ * for horses, pigs or camels, and a client-steered boat's "on ground" flag is the client's own claim. The
+ * ground and water under the vehicle are looked up here, from the server's blocks.
  */
-public final class VehicleListener implements Listener {
+public final class VehicleListener implements Runnable {
 
     /** Longer than any horse jump (about 0.7 s up and at the top) with lag on top. */
     private static final long MAX_AIR_MS = 1500;
@@ -32,29 +33,35 @@ public final class VehicleListener implements Listener {
         this.plugin = plugin;
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onVehicleMove(VehicleMoveEvent event) {
-        plugin.safety().run("vehicle", () -> check(event));
+    @Override
+    public void run() {
+        if (!plugin.settings().enabled(CheckType.FLY)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (player.isInsideVehicle()) {
+                check(player, now);
+            }
+        }
     }
 
-    private void check(VehicleMoveEvent event) {
-        Vehicle vehicle = event.getVehicle();
-        Player driver = driver(vehicle);
-        if (driver == null || !plugin.settings().enabled(CheckType.FLY)) {
-            return;
-        }
+    private void check(Player driver, long now) {
         PlayerData data = plugin.players().getIfPresent(driver.getUniqueId());
-        long now = System.currentTimeMillis();
-        if (data == null || plugin.exemptions().skipAll(driver, data, now) || now < data.graceUntilMs
-            || driver.getAllowFlight() || !canFall(vehicle) || held(vehicle)) {
-            if (data != null) {
-                data.vehicleAirSinceMs = 0;
-            }
+        if (data == null) {
             return;
         }
-        double dy = event.getTo().getY() - event.getFrom().getY();
-        if (dy < -0.03) {
-            data.vehicleAirSinceMs = 0; // falling, as it should
+        Entity vehicle = driver.getVehicle();
+        while (vehicle != null && vehicle.getVehicle() != null) {
+            vehicle = vehicle.getVehicle();
+        }
+        double y = vehicle == null ? Double.NaN : vehicle.getLocation().getY();
+        double dy = Double.isNaN(data.vehicleLastY) ? -1 : y - data.vehicleLastY;
+        data.vehicleLastY = y;
+        if (vehicle == null || plugin.exemptions().skipAll(driver, data, now) || now < data.graceUntilMs
+            || driver.getAllowFlight() || !vehicle.hasGravity() || vehicle instanceof HappyGhast
+            || dy < -0.03 || held(vehicle)) {
+            data.vehicleAirSinceMs = 0; // falling, held up, or not ours to judge
             return;
         }
         if (data.vehicleAirSinceMs == 0) {
@@ -73,30 +80,27 @@ public final class VehicleListener implements Listener {
         }
     }
 
-    /** Vehicles that have gravity. Happy ghasts fly for real. */
-    private static boolean canFall(Vehicle vehicle) {
-        return vehicle.hasGravity() && !(vehicle instanceof HappyGhast);
-    }
-
-    /** On the ground, in water or lava (swimming horses, striders, boats), or on rails (minecart slopes). */
-    private static boolean held(Vehicle vehicle) {
-        if (vehicle.isOnGround() || vehicle.isInWater() || vehicle.isInLava()) {
+    /** Ground right under the vehicle, water or lava around it, or rails under a minecart. */
+    private static boolean held(Entity vehicle) {
+        World world = vehicle.getWorld();
+        BoundingBox box = vehicle.getBoundingBox();
+        BoundingBox under = new BoundingBox(box.getMinX() + 0.001, box.getMinY() - 0.12, box.getMinZ() + 0.001,
+            box.getMaxX() - 0.001, box.getMinY() + 0.02, box.getMaxZ() - 0.001);
+        if (world.hasCollisionsIn(under)) {
             return true;
         }
-        if (vehicle instanceof Minecart) {
-            Location at = vehicle.getLocation();
-            return Tag.RAILS.isTagged(at.getBlock().getType())
-                || Tag.RAILS.isTagged(at.clone().subtract(0, 1, 0).getBlock().getType());
-        }
-        return false;
-    }
-
-    private static Player driver(Vehicle vehicle) {
-        for (Entity passenger : vehicle.getPassengers()) {
-            if (passenger instanceof Player player) {
-                return player;
+        int x = vehicle.getLocation().getBlockX();
+        int z = vehicle.getLocation().getBlockZ();
+        for (int by = (int) Math.floor(box.getMinY() - 0.2); by <= (int) Math.floor(box.getMaxY()); by++) {
+            Block block = world.getBlockAt(x, by, z);
+            double top = Environment.fluidTop(block);
+            if (!Double.isNaN(top) && box.getMinY() - 0.2 < top) {
+                return true;
+            }
+            if (vehicle instanceof Minecart && Tag.RAILS.isTagged(block.getType())) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 }

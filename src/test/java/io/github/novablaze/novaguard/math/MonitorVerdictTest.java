@@ -29,6 +29,15 @@ class MonitorVerdictTest {
     }
 
     @Test
+    void buildingCheatFlagsNowCountAsEvidence() {
+        MonitorVerdict clean = MonitorVerdict.evaluate(clean().build());
+        MonitorVerdict nuker = MonitorVerdict.evaluate(clean()
+            .flags(CheckType.FAST_BREAK, 120).flags(CheckType.SCAFFOLD, 80).build());
+        assertEquals(clean.score() + 3, nuker.score(), 1e-9);
+        assertTrue(nuker.reasons().stream().anyMatch(r -> r.contains("FastBreak/FastPlace/Scaffold")));
+    }
+
+    @Test
     void robotClickingIsSuspicious() {
         MonitorVerdict v = MonitorVerdict.evaluate(clean().cpsMean(12).cpsStdDev(0.3).build());
         assertEquals(MonitorVerdict.Level.SUSPICIOUS, v.level());

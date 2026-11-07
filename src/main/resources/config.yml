@@ -135,23 +135,26 @@ checks:
     kick-vl: 0
     suspect-vl: 3
   fast-break:
-    # Nuker / FastBreak: breaking more blocks per second than a player can. Minecraft itself already
-    # refuses hard blocks broken too fast; this catches nukers that clear many soft blocks at once.
+    # Nuker: breaking far more blocks per second than any player can. Minecraft itself already refuses
+    # hard blocks broken too fast; nukers clear dozens of soft blocks (grass, crops) per tick. Every click
+    # can break one instant-break block, so fast drag-clicking reaches 30-40/s: the limit stays above that.
     enabled: true
     mode: enforce
     kick-vl: 0
     suspect-vl: 5
-    # One block per tick (20/s) is the human maximum with instant mining.
-    max-per-second: 22
-    seconds: 2
+    max-per-second: 45
+    seconds: 3
   fast-place:
-    # FastPlace / Tower: placing more blocks per second than the right-click delay allows.
+    # Extreme FastPlace / Tower: several blocks per tick. The right-click delay only applies while the button
+    # is held; every separate click places a block, so drag-clicking builders reach 30-40/s legitimately.
+    # A FastPlace cheat at one block per tick (20/s) looks exactly like fast clicking and is not flagged;
+    # the Scaffold check below catches scaffold cheats by where they click instead.
     enabled: true
     mode: enforce
     kick-vl: 0
     suspect-vl: 5
-    max-per-second: 15
-    seconds: 2
+    max-per-second: 45
+    seconds: 3
   scaffold:
     # Scaffold: placing a block against a face that points away from the player (impossible to click).
     enabled: true

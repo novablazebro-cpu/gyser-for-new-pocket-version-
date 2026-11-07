@@ -143,7 +143,8 @@ layers, so a dupe has to get past all of them:
    `NOTHING`/`WARN`). With all safe it prints "Paper's built-in dupe fixes are all switched on."
 2. **Containers that no longer exist.** Clicks are blocked in donkey/llama/chest-boat/minecart windows whose
    entity died, teleported or is far away, and in chest/barrel/shulker windows whose block was broken,
-   pushed or replaced. Hoppers cannot move items into or out of a removed entity or pick up a removed item.
+   replaced or too far away. Hoppers cannot pick up an item that was already removed (vanilla hoppers
+   already ignore dead entities, so NovaGuard does not slow every hopper down by watching them).
 3. **Impossible items are repaired.** Overstacked stacks are trimmed; illegal enchantments are removed.
 4. **Unknown dupes are undone afterwards ("undupe", on by default).** Valuable items get a hidden ID; two
    copies of one ID prove a dupe whatever method was used. The extra copies are deleted, also inside shulker

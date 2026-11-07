@@ -77,7 +77,6 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(new CombatListener(this), this);
         pluginManager.registerEvents(new BlockReachListener(this), this);
         pluginManager.registerEvents(new BuildListener(this), this);
-        pluginManager.registerEvents(new io.github.novablaze.novaguard.movement.VehicleListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
         pluginManager.registerEvents(enchantGuard, this);
         pluginManager.registerEvents(chunkGuard, this);
@@ -85,6 +84,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, movement, 20L, 20L);
+        io.github.novablaze.novaguard.movement.VehicleListener vehicles = new io.github.novablaze.novaguard.movement.VehicleListener(this);
+        Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("vehicle", vehicles), 1L, 1L);
         Bukkit.getScheduler().runTaskTimer(this, this::decayViolations, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("monitor", monitor), 1200L, 1200L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("ban-waves", bans), 1200L, 1200L);
@@ -96,7 +97,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerData data = players.get(player);
             data.grace(now, 5000);
-            monitor.onJoin(player, data);
+            monitor.onJoin(player, data, true); // a reload is not a new play session
             alts.onJoin(player);
         }
 

@@ -44,9 +44,12 @@ public final class ItemFingerprints {
     /** A "received it normally" record only decides an undupe for this long: old receipts prove nothing. */
     private static final long RECEIPT_TRUST_MS = 30 * 60_000L;
     /** Accounts after which an ID counts as a plugin template (kit/crate copy) instead of a dupe. */
-    private static final int TEMPLATE_OWNERS = 3;
+    private static final int TEMPLATE_OWNERS = 4;
+    /** An alert that deleted nothing is repeated at most this often per item. */
+    private static final long REPORT_AGAIN_MS = 60 * 60_000L;
 
-    private record Received(UUID player, long atMs) {
+    /** {@code player} received the item from {@code from} (who threw it or put it into the chest). */
+    private record Received(UUID player, UUID from, long atMs) {
     }
 
     /**
@@ -56,7 +59,7 @@ public final class ItemFingerprints {
      * @param slot      the slot in that inventory
      * @param nested    -1 for an item directly in the slot, else its index inside the shulker/bundle there
      */
-    private record Found(String id, UUID owner, Inventory inventory, int slot, int nested, String where) {
+    private record Found(String id, UUID owner, Inventory inventory, int slot, int nested, String where, boolean own) {
         boolean topLevel() {
             return nested < 0;
         }
@@ -74,8 +77,10 @@ public final class ItemFingerprints {
      * dupe: such IDs are reported but never deleted.
      */
     private final Map<String, Set<UUID>> ownersSeen = new HashMap<>();
-    /** Item IDs already alerted without a fix, so an unclear case is reported once, not on every scan. */
-    private final Set<String> reported = new HashSet<>();
+    /** Item ID -> when an alert without a fix was last sent, so an unclear case is not reported on every scan. */
+    private final Map<String, Long> reported = new HashMap<>();
+    /** Item ID -> the player who last put it into a chest (so taking it out shows who gave it). */
+    private final Map<String, UUID> depositedBy = new HashMap<>();
 
     public ItemFingerprints(NovaGuardPlugin plugin) {
         this.plugin = plugin;
@@ -84,21 +89,56 @@ public final class ItemFingerprints {
 
     // ---------------------------------------------------------------- normal transfers
 
-    /** A player received an item in a normal way. Remembers it for every tagged item, also inside shulkers. */
-    public void received(Player player, ItemStack item) {
+    /**
+     * A player received an item from another player: picked up what {@code from} threw, or took out of a
+     * chest what {@code from} put in. Getting one's own item back is not a handover and is ignored, so a
+     * duper cannot make himself "the receiver" by dropping and picking up his own copy.
+     */
+    public void received(Player player, ItemStack item, UUID from) {
+        if (from == null || from.equals(player.getUniqueId())) {
+            return;
+        }
+        Received receipt = new Received(player.getUniqueId(), from, System.currentTimeMillis());
+        forEachId(item, id -> receivedBy.put(id, receipt));
+    }
+
+    /** A player put an item into a chest (or other storage block). */
+    public void deposited(Player player, ItemStack item) {
+        forEachId(item, id -> depositedBy.put(id, player.getUniqueId()));
+    }
+
+    /** Who last put this item into a chest, or null. */
+    public UUID depositor(ItemStack item) {
+        String id = readId(item);
+        return id == null ? null : depositedBy.get(id);
+    }
+
+    private void forEachId(ItemStack item, java.util.function.Consumer<String> action) {
         if (item == null || item.isEmpty()) {
             return;
         }
-        Received receipt = new Received(player.getUniqueId(), System.currentTimeMillis());
         String id = readId(item);
         if (id != null) {
-            receivedBy.put(id, receipt);
+            action.accept(id);
         }
         for (ItemStack inner : nestedItems(item)) {
             String innerId = readId(inner);
             if (innerId != null) {
-                receivedBy.put(innerId, receipt);
+                action.accept(innerId);
             }
+        }
+    }
+
+    /** Forgets old receipts and alerts, so memory stays small on a long-running server. */
+    public void cleanup() {
+        long now = System.currentTimeMillis();
+        receivedBy.values().removeIf(r -> now - r.atMs() >= RECEIPT_TRUST_MS);
+        reported.values().removeIf(at -> now - at >= REPORT_AGAIN_MS);
+        if (depositedBy.size() > 50_000) {
+            depositedBy.clear();
+        }
+        if (ownersSeen.size() > 200_000) {
+            ownersSeen.clear();
         }
     }
 
@@ -160,6 +200,9 @@ public final class ItemFingerprints {
         }
         before.keySet().forEach(id -> lastHolder.put(id, player.getUniqueId()));
         for (Found f : own) {
+            if (!f.own()) {
+                continue; // opening a chest is not owning what is inside
+            }
             Set<UUID> owners = ownersSeen.computeIfAbsent(f.id(), k -> new HashSet<>());
             if (owners.size() < TEMPLATE_OWNERS) {
                 owners.add(f.owner());
@@ -202,32 +245,43 @@ public final class ItemFingerprints {
             copies.sort(Comparator.comparing(f -> !f.topLevel()));
             List<Copy<Found>> input = new ArrayList<>();
             copies.forEach(f -> input.add(new Copy<>(f.owner(), f)));
+            // A receipt decides only when it is recent and the giver is one of the holders: then the giver gave
+            // the item away and still has it.
             Received receipt = receivedBy.get(id);
+            Set<UUID> holders = new HashSet<>();
+            copies.forEach(f -> holders.add(f.owner()));
             UUID receiver = receipt != null && System.currentTimeMillis() - receipt.atMs() < RECEIPT_TRUST_MS
-                ? receipt.player() : null;
+                && holders.contains(receipt.player()) && holders.contains(receipt.from()) ? receipt.player() : null;
             Verdict<Found> verdict = DupeResolver.resolve(input, receiver);
 
             String places = describe(copies);
             boolean template = ownersSeen.getOrDefault(id, Set.of()).size() >= TEMPLATE_OWNERS;
             if (!remove || template || verdict.remove().isEmpty()) {
-                if (reported.add(id)) {
-                    String why = template ? "this ID was seen with " + TEMPLATE_OWNERS + "+ accounts, so it is"
+                long now = System.currentTimeMillis();
+                Long last = reported.get(id);
+                if (last == null || now - last >= REPORT_AGAIN_MS) {
+                    reported.put(id, now);
+                    String why = template ? "this ID was held by " + TEMPLATE_OWNERS + "+ accounts, so it is"
                         + " probably a kit/crate copy made by a plugin (strip it with /ng untag)" : verdict.reason();
-                    plugin.violations().dupeAlert(playerName, copies.size() + " copies of one item (ID "
-                        + shortId(id) + ") in " + places + (remove ? " - not deleted: " + why : ""));
+                    // Nobody is blamed when it is unclear who duped: no dupe evidence for anyone.
+                    plugin.violations().dupeAlert(names(holders), copies.size() + " copies of one item (ID "
+                        + shortId(id) + ") in " + places + (remove ? " - not deleted: " + why : ""), false);
                 }
                 continue;
             }
             int deleted = 0;
+            Set<UUID> culprits = new HashSet<>();
             for (Found f : verdict.remove()) {
                 if (delete(f)) {
                     deleted++;
+                    culprits.add(f.owner());
                 }
             }
-            plugin.violations().dupeAlert(playerName, copies.size() + " copies of one item (ID "
-                + shortId(id) + ") in " + places + ": undupe deleted " + deleted + " (" + verdict.reason() + ")"
-                + (verdict.ownerUnclear() ? ". Staff: check who duped" : ""));
             if (deleted > 0) {
+                // Blame the holder whose copy was deleted (the duper), not the player whose scan found it.
+                plugin.violations().dupeAlert(names(culprits), copies.size() + " copies of one item (ID "
+                    + shortId(id) + ") in " + places + ": undupe deleted " + deleted + " (" + verdict.reason() + ")",
+                    true);
                 return true;
             }
         }
@@ -292,17 +346,18 @@ public final class ItemFingerprints {
     private List<Found> collectOwn(Player player, Inventory openContainer, boolean tagNew) {
         List<Found> found = new ArrayList<>();
         UUID owner = player.getUniqueId();
-        collect(owner, player.getInventory(), "inventory of " + player.getName(), found, tagNew);
+        collect(owner, player.getInventory(), "inventory of " + player.getName(), found, tagNew, true);
         Inventory enderChest = player.getEnderChest();
-        collect(owner, enderChest, "ender chest of " + player.getName(), found, true);
+        collect(owner, enderChest, "ender chest of " + player.getName(), found, true, true);
         if (openContainer != null && openContainer != enderChest && isStorage(openContainer)) {
             collect(owner, openContainer, "open " + openContainer.getType().name().toLowerCase(Locale.ROOT)
-                + " (" + player.getName() + ")", found, true);
+                + " (" + player.getName() + ")", found, true, false);
         }
         return found;
     }
 
-    private void collect(UUID owner, Inventory inventory, String where, List<Found> out, boolean tagNew) {
+    private void collect(UUID owner, Inventory inventory, String where, List<Found> out, boolean tagNew,
+                         boolean own) {
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
             if (item == null || item.isEmpty()) {
@@ -316,14 +371,14 @@ public final class ItemFingerprints {
                 id = newId;
             }
             if (id != null) {
-                out.add(new Found(id, owner, inventory, slot, -1, where));
+                out.add(new Found(id, owner, inventory, slot, -1, where, own));
             }
             List<ItemStack> inner = nestedItems(item);
             String place = where + " (inside " + item.getType().name().toLowerCase(Locale.ROOT) + ")";
             for (int i = 0; i < inner.size(); i++) {
                 String innerId = readId(inner.get(i));
                 if (innerId != null) {
-                    out.add(new Found(innerId, owner, inventory, slot, i, place));
+                    out.add(new Found(innerId, owner, inventory, slot, i, place, own));
                 }
             }
         }
@@ -373,6 +428,15 @@ public final class ItemFingerprints {
         List<String> places = new ArrayList<>();
         copies.stream().map(Found::where).filter(Objects::nonNull).forEach(places::add);
         return String.join(", ", places);
+    }
+
+    private static String names(Set<UUID> players) {
+        List<String> names = new ArrayList<>();
+        for (UUID uuid : players) {
+            String name = Bukkit.getOfflinePlayer(uuid).getName();
+            names.add(name != null ? name : uuid.toString().substring(0, 8));
+        }
+        return String.join("+", names);
     }
 
     private static String shortId(String id) {

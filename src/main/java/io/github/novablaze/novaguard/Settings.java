@@ -176,10 +176,10 @@ public final class Settings {
         maxCps = Math.min(60, Math.max(5, c.getInt("checks.autoclicker.max-cps", 22)));
         cpsSeconds = Math.max(1, c.getInt("checks.autoclicker.seconds", 3));
         // SustainedRate counts at most 64 actions per second, so higher limits are capped.
-        fastBreakMax = Math.min(60, Math.max(5, c.getInt("checks.fast-break.max-per-second", 22)));
-        fastBreakSeconds = Math.max(1, c.getInt("checks.fast-break.seconds", 2));
-        fastPlaceMax = Math.min(60, Math.max(5, c.getInt("checks.fast-place.max-per-second", 15)));
-        fastPlaceSeconds = Math.max(1, c.getInt("checks.fast-place.seconds", 2));
+        fastBreakMax = Math.min(60, Math.max(5, c.getInt("checks.fast-break.max-per-second", 45)));
+        fastBreakSeconds = Math.max(1, c.getInt("checks.fast-break.seconds", 3));
+        fastPlaceMax = Math.min(60, Math.max(5, c.getInt("checks.fast-place.max-per-second", 45)));
+        fastPlaceSeconds = Math.max(1, c.getInt("checks.fast-place.seconds", 3));
         scaffoldBuffer = Math.max(1, c.getInt("checks.scaffold.buffer", 2));
 
         banWaves = c.getBoolean("ban-waves.enabled", true);

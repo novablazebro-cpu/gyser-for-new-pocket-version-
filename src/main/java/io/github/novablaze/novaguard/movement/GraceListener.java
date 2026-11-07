@@ -199,8 +199,9 @@ public final class GraceListener implements Listener {
 
     private static boolean pushes(EntityDamageEvent.DamageCause cause) {
         return switch (cause) {
+            // Not CONTACT (cactus, berry bush): it hurts but pushes nobody, and anyone can stand in it.
             case ENTITY_ATTACK, ENTITY_SWEEP_ATTACK, PROJECTILE, ENTITY_EXPLOSION, BLOCK_EXPLOSION, THORNS,
-                 SONIC_BOOM, CONTACT, LIGHTNING -> true;
+                 SONIC_BOOM, LIGHTNING -> true;
             default -> false;
         };
     }
@@ -218,10 +219,21 @@ public final class GraceListener implements Listener {
         grace(event.getPlayer(), 3000);
     }
 
+    /**
+     * Closing the elytra: the glide speed carries on for a moment. Starting a glide gives nothing (gliding has
+     * its own ElytraFly check), and the grace is given at most once every 5 seconds: a client can toggle
+     * gliding at will, so free grace on every toggle would switch the movement checks off.
+     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onGlide(EntityToggleGlideEvent event) {
-        if (event.getEntity() instanceof Player player) {
-            grace(player, 2500);
+        if (event.isGliding() || !(event.getEntity() instanceof Player player)) {
+            return;
+        }
+        PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
+        long now = System.currentTimeMillis();
+        if (data != null && now - data.lastGlideGraceMs >= 5000) {
+            data.lastGlideGraceMs = now;
+            grace(player, 1000 + player.getPing());
         }
     }
 

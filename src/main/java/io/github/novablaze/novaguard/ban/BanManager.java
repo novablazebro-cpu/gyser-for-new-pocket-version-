@@ -216,6 +216,7 @@ public final class BanManager implements Runnable, Listener {
             }
         }
         expireApprovals(now);
+        suspectNotified.values().removeIf(at -> now - at > DAY_MS); // the 1-day cooldown is over: forget it
         if (!approvals.isEmpty() && now - lastReminderMs >= REMIND_MS) {
             lastReminderMs = now;
             approvals.values().forEach(this::redAlert);

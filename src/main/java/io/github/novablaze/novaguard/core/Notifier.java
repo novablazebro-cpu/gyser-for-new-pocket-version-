@@ -78,7 +78,8 @@ public final class Notifier {
             String from = settings.emailFrom.isBlank() ? settings.smtpUsername : settings.emailFrom;
             new SmtpClient(SSLSocketFactory.getDefault()).send(settings.smtpHost, settings.smtpPort,
                 settings.smtpUsername, settings.smtpPassword, from, settings.emailTo, subject, body);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // RuntimeException: a bad smtp-host or smtp-port in config.yml (IllegalArgumentException).
             plugin.getLogger().warning("Could not send the notification email (" + e.getMessage()
                 + "). Many hosts block outgoing mail; a Discord webhook usually still works.");
         }
