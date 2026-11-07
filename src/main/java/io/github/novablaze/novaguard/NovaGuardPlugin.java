@@ -77,6 +77,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(new CombatListener(this), this);
         pluginManager.registerEvents(new BlockReachListener(this), this);
         pluginManager.registerEvents(new BuildListener(this), this);
+        pluginManager.registerEvents(new io.github.novablaze.novaguard.movement.VehicleListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
         pluginManager.registerEvents(enchantGuard, this);
         pluginManager.registerEvents(chunkGuard, this);

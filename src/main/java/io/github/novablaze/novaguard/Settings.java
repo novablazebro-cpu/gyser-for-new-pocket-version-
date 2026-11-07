@@ -84,6 +84,7 @@ public final class Settings {
 
     public final boolean altsEnabled;
     public final int altsMaxAccountsPerIp;
+    public final long altsRecordAfterSeconds;
 
     public final long watchdogSlowNanos;
     public final int watchdogMaxErrors;
@@ -134,7 +135,7 @@ public final class Settings {
         burstIntervalMs = Math.max(1, c.getLong("lag.burst-interval-ms", 10));
         spikeGraceMs = Math.max(0, c.getLong("lag.spike-grace-ms", 1500));
         minTpsForMovement = c.getDouble("lag.min-tps-for-movement", 18.0);
-        maxPingForMovement = c.getInt("lag.max-ping-for-movement", 1000);
+        maxPingForMovement = c.getInt("lag.max-ping-for-movement", -1);
 
         kickEnabled = c.getBoolean("kick.enabled", true);
         kickMaxPing = c.getInt("kick.max-ping", 400);
@@ -161,7 +162,7 @@ public final class Settings {
         flyHoverMs = Math.max(500, c.getLong("checks.fly.hover-ms", 1000));
         flyHoverMinDrop = Math.max(0, c.getDouble("checks.fly.hover-min-drop", 0.5));
 
-        noFallMinSpoofs = Math.max(1, c.getInt("checks.nofall.min-spoofs", 3));
+        noFallMinSpoofs = Math.max(1, c.getInt("checks.nofall.min-spoofs", 1));
 
         reachTolerance = Math.max(0, c.getDouble("checks.reach.tolerance", 0.25));
         reachSoftDamage = Math.min(1.0, Math.max(0.0, c.getDouble("checks.reach.soft-damage-multiplier", 0.75)));
@@ -195,6 +196,7 @@ public final class Settings {
 
         altsEnabled = c.getBoolean("alts.enabled", true);
         altsMaxAccountsPerIp = Math.max(1, c.getInt("alts.max-accounts-per-ip", 5));
+        altsRecordAfterSeconds = Math.max(0, c.getLong("alts.record-after-seconds", 120));
 
         watchdogSlowNanos = Math.max(1, c.getLong("watchdog.slow-ms", 5)) * 1_000_000L;
         watchdogMaxErrors = Math.max(1, c.getInt("watchdog.max-errors-per-minute", 20));

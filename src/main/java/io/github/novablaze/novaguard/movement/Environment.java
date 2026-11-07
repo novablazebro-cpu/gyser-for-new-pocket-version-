@@ -5,7 +5,7 @@ import org.bukkit.Material;
 import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Levelled;
 import org.bukkit.block.data.Waterlogged;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
@@ -30,6 +30,8 @@ public final class Environment {
     }
 
     private static final double EDGE = 0.03;
+    /** How much narrower than the player the ground box is, so touching walls are not ground. */
+    private static final double INSET = 0.001;
 
     private Environment() {
     }
@@ -42,10 +44,11 @@ public final class Environment {
         double y = at.getY();
         double z = at.getZ();
 
-        // Slightly wider than the player, so standing on a block edge never looks like floating.
-        BoundingBox feet = new BoundingBox(x - half - EDGE, y - 0.12, z - half - EDGE,
-            x + half + EDGE, y + 0.02, z + half + EDGE);
-        boolean grounded = world.hasCollisionsIn(feet);
+        // Ground right under the feet. The box is a hair narrower than the player, so a wall the player is
+        // touching never counts as ground (otherwise fly/spider cheats are safe while hugging a wall).
+        BoundingBox feet = new BoundingBox(x - half + INSET, y - 0.12, z - half + INSET,
+            x + half - INSET, y + 0.02, z + half - INSET);
+        boolean grounded = world.hasCollisionsIn(feet) || edgeGround(world, x, y, z, half);
 
         boolean supported = false;
         int minX = floor(x - half - 0.1);
@@ -55,7 +58,7 @@ public final class Environment {
         for (int bx = minX; bx <= maxX && !supported; bx++) {
             for (int bz = minZ; bz <= maxZ && !supported; bz++) {
                 for (int by = floor(y - 0.2); by <= floor(y + height); by++) {
-                    if (isSupporting(world.getBlockAt(bx, by, bz))) {
+                    if (isSupporting(world.getBlockAt(bx, by, bz), y, height)) {
                         supported = true;
                         break;
                     }
@@ -96,24 +99,87 @@ public final class Environment {
         return false;
     }
 
-    private static boolean isSupporting(Block block) {
+    /**
+     * Something in this block holds the player up or slows them down. Water and lava only count when the
+     * player's body is really below the fluid's surface: standing <i>on top of</i> water is not swimming,
+     * it is the Jesus cheat.
+     */
+    private static boolean isSupporting(Block block, double feetY, double height) {
         Material type = block.getType();
         if (type.isAir()) {
             return false;
         }
-        if (block.isLiquid() || Tag.CLIMBABLE.isTagged(type)) {
+        double top = fluidTop(block);
+        if (!Double.isNaN(top)) {
+            return feetY < top && feetY + height > block.getY();
+        }
+        if (Tag.CLIMBABLE.isTagged(type)) {
             return true;
         }
-        switch (type) {
-            case WATER, LAVA, BUBBLE_COLUMN, COBWEB, POWDER_SNOW, SCAFFOLDING, HONEY_BLOCK, SWEET_BERRY_BUSH,
-                 KELP, KELP_PLANT, SEAGRASS, TALL_SEAGRASS -> {
-                return true;
-            }
-            default -> {
+        return switch (type) {
+            case COBWEB, POWDER_SNOW, SCAFFOLDING, HONEY_BLOCK, SWEET_BERRY_BUSH -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * The height of the fluid surface in this block (world Y), or NaN when the block holds no fluid. A source
+     * or flowing block is 8/9 full minus 1/9 per flow level; falling fluid, or fluid with the same fluid
+     * above it, fills the whole block.
+     */
+    static double fluidTop(Block block) {
+        Material type = block.getType();
+        boolean water = type == Material.WATER || type == Material.BUBBLE_COLUMN || type == Material.KELP
+            || type == Material.KELP_PLANT || type == Material.SEAGRASS || type == Material.TALL_SEAGRASS
+            || block.getBlockData() instanceof Waterlogged w && w.isWaterlogged();
+        boolean lava = type == Material.LAVA;
+        if (!water && !lava) {
+            return Double.NaN;
+        }
+        Block above = block.getRelative(0, 1, 0);
+        boolean sameAbove = lava ? above.getType() == Material.LAVA : !Double.isNaN(waterOnly(above));
+        if (sameAbove || type == Material.BUBBLE_COLUMN) {
+            return block.getY() + 1.0;
+        }
+        int level = block.getBlockData() instanceof Levelled levelled ? levelled.getLevel() : 0;
+        if (level >= 8) {
+            return block.getY() + 1.0;
+        }
+        return block.getY() + (8 - level) / 9.0;
+    }
+
+    private static double waterOnly(Block block) {
+        Material type = block.getType();
+        return type == Material.WATER || type == Material.BUBBLE_COLUMN || type == Material.KELP
+            || type == Material.KELP_PLANT || type == Material.SEAGRASS || type == Material.TALL_SEAGRASS
+            || block.getBlockData() instanceof Waterlogged w && w.isWaterlogged() ? 0 : Double.NaN;
+    }
+
+    /**
+     * Standing on the very edge of a block (the feet overlap it by less than {@link #INSET}). Only surfaces
+     * whose top is at foot level count, so the side of a wall never does.
+     */
+    private static boolean edgeGround(World world, double x, double y, double z, double half) {
+        BoundingBox wide = new BoundingBox(x - half - EDGE, y - 0.12, z - half - EDGE,
+            x + half + EDGE, y + 0.02, z + half + EDGE);
+        for (int bx = floor(wide.getMinX()); bx <= floor(wide.getMaxX()); bx++) {
+            for (int bz = floor(wide.getMinZ()); bz <= floor(wide.getMaxZ()); bz++) {
+                for (int by = floor(wide.getMinY()); by <= floor(wide.getMaxY()); by++) {
+                    Block block = world.getBlockAt(bx, by, bz);
+                    if (block.isPassable()) {
+                        continue;
+                    }
+                    for (BoundingBox part : block.getCollisionShape().getBoundingBoxes()) {
+                        BoundingBox shifted = part.clone().shift(bx, by, bz);
+                        double topY = shifted.getMaxY();
+                        if (topY >= y - 0.12 && topY <= y + 0.02 && shifted.overlaps(wide)) {
+                            return true;
+                        }
+                    }
+                }
             }
         }
-        BlockData data = block.getBlockData();
-        return data instanceof Waterlogged waterlogged && waterlogged.isWaterlogged();
+        return false;
     }
 
     private static boolean isSoftLanding(Material type) {

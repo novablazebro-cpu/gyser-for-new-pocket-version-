@@ -16,6 +16,7 @@ import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.ComplexEntityPart;
 import org.bukkit.entity.ComplexLivingEntity;
 import org.bukkit.entity.Entity;
@@ -25,13 +26,17 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 
 /**
- * Combat checks. PrePlayerAttackEntityEvent fires for client attacks AND for server-computed spear stabs,
- * so spear hits are recognised by the held item and skipped (the server picks spear targets itself).
+ * Combat checks. PrePlayerAttackEntityEvent fires for client attacks AND for server-computed spear hits.
+ * A spear charge (held up in the main hand) is entirely the server's work and is skipped. A spear jab can
+ * hit several entities along the thrust in one go, so with a spear in the main hand only MultiTarget,
+ * AutoClicker and WallHit are skipped: reach (judged with the spear's own attack range) and aim still run,
+ * so a killaura that just holds a spear gains nothing. A spear in the offhand changes nothing.
  */
 public final class CombatListener implements Listener {
 
@@ -56,19 +61,23 @@ public final class CombatListener implements Listener {
     private void check(PrePlayerAttackEntityEvent event, Player player, PlayerData data) {
         Entity target = event.getAttacked();
         long now = System.currentTimeMillis();
-        if (plugin.exemptions().skipAll(player, data, now) || player.isRiptiding() || serverComputedHit(player)) {
+        if (plugin.exemptions().skipAll(player, data, now) || player.isRiptiding() || spearCharge(player)) {
             return;
         }
+        boolean spearJab = isSpearLike(player.getInventory().getItemInMainHand());
         Settings settings = plugin.settings();
         if (data.monitored) {
             plugin.monitor().recordAttack(player.getUniqueId(), now);
         }
 
-        if (settings.enabled(CheckType.AUTOCLICKER) && tooManyClicks(player, data, settings, now)) {
+        if (!spearJab && settings.enabled(CheckType.AUTOCLICKER) && tooManyClicks(player, data, settings, now)) {
             block(event, data, CheckType.AUTOCLICKER);
             return;
         }
-        if (settings.enabled(CheckType.MULTI_TARGET)) {
+        // Only real fighters count as targets: breaking end crystals, item frames or boats next to a fight
+        // (crystal PvP) is not killaura switching.
+        if (!spearJab && settings.enabled(CheckType.MULTI_TARGET) && target instanceof LivingEntity
+            && !(target instanceof ArmorStand)) {
             int distinct = data.targets.record(target.getEntityId(), now, settings.multiWindowMs);
             if (distinct > settings.multiMaxTargets) {
                 plugin.violations().flag(player, data, CheckType.MULTI_TARGET, 1.0,
@@ -117,7 +126,7 @@ public final class CombatListener implements Listener {
             block(event, data, CheckType.AIM);
             return;
         }
-        if (settings.enabled(CheckType.WALL_HIT) && failsWall(player, data, settings, eye, target, seen, distance)) {
+        if (!spearJab && settings.enabled(CheckType.WALL_HIT) && failsWall(player, data, settings, eye, target, seen, distance)) {
             block(event, data, CheckType.WALL_HIT);
         }
     }
@@ -145,12 +154,14 @@ public final class CombatListener implements Listener {
         data.softHitTarget = -1;
     }
 
-    /** Spear jabs and charges are decided by the server, so a client cannot fake their reach. */
-    private static boolean serverComputedHit(Player player) {
-        if (isSpearLike(player.getInventory().getItemInMainHand())) {
-            return true;
-        }
-        return player.isHandRaised() && isSpearLike(player.getActiveItem());
+    /**
+     * A spear charge: the spear in the MAIN hand is held up and the server itself hits whatever the tip
+     * touches. A spear charged in the offhand while attacking with the main hand is a normal attack.
+     */
+    private static boolean spearCharge(Player player) {
+        return player.isHandRaised() && player.getActiveItemHand() == EquipmentSlot.HAND
+            && player.getActiveItem().hasData(DataComponentTypes.KINETIC_WEAPON)
+            && isSpearLike(player.getInventory().getItemInMainHand());
     }
 
     private static boolean isSpearLike(ItemStack item) {
@@ -191,6 +202,17 @@ public final class CombatListener implements Listener {
      * For mobs: the current hitbox grown by how far the mob can move within the window.
      */
     private static Box targetBox(Entity target, PlayerData targetData, Location eye, long now, long window) {
+        if (target.isInsideVehicle()) {
+            // Riders send no move events and have no velocity of their own: use the mount's speed, and at
+            // least 10 blocks/second, because horses, camels, happy ghasts and boats on ice are that fast.
+            Entity mount = target;
+            while (mount.getVehicle() != null) {
+                mount = mount.getVehicle();
+            }
+            double speedPerSecond = Math.max(10.0, mount.getVelocity().length() * 20.0);
+            double grow = Math.min(3.0, speedPerSecond * window / 1000.0);
+            return toBox(target.getBoundingBox()).expand(grow);
+        }
         if (targetData != null && targetData.history.size() > 0) {
             Box best = targetData.history.closestBox(eye.getX(), eye.getY(), eye.getZ(), now - window);
             Box current = toBox(target.getBoundingBox());

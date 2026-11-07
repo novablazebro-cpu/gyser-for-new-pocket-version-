@@ -17,7 +17,8 @@ import org.bukkit.entity.Player;
 public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
-        List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest");
+        List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
+            "untag");
 
     private final NovaGuardPlugin plugin;
 
@@ -72,6 +73,11 @@ public final class NovaGuardCommand implements BasicCommand {
                     approval(sender, sub, args);
                 }
             }
+            case "untag" -> {
+                if (requireAdmin(sender)) {
+                    untag(sender);
+                }
+            }
             case "notifytest" -> {
                 if (requireAdmin(sender)) {
                     plugin.notifier().test();
@@ -80,7 +86,7 @@ public final class NovaGuardCommand implements BasicCommand {
                 }
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
-                + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest>", NamedTextColor.YELLOW);
+                + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest | untag>", NamedTextColor.YELLOW);
         }
     }
 
@@ -196,6 +202,20 @@ public final class NovaGuardCommand implements BasicCommand {
                 ? "Refused. Only " + args[1] + "'s own account stays banned; nobody else is affected."
                 : "No IP ban waits for " + args[1] + ".", NamedTextColor.GREEN);
         }
+    }
+
+    /** Strips the anti-dupe ID from the held item, before an admin turns it into a kit, crate or shop item. */
+    private void untag(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            reply(sender, "Only players can untag the item in their hand.", NamedTextColor.RED);
+            return;
+        }
+        org.bukkit.inventory.ItemStack hand = player.getInventory().getItemInMainHand();
+        int removed = plugin.fingerprints().untag(hand);
+        player.getInventory().setItemInMainHand(hand);
+        reply(sender, removed == 0 ? "This item has no anti-dupe ID."
+            : "Removed " + removed + " anti-dupe ID(s). Create the kit/crate now, before the next scan tags it again"
+                + " (or hold it in creative mode, where nothing is tagged).", NamedTextColor.GREEN);
     }
 
     private void toggleAlerts(CommandSender sender) {

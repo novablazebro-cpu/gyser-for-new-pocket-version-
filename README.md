@@ -23,8 +23,8 @@ servers that also run Geyser/Floodgate.
 | Check | Catches | Action |
 |---|---|---|
 | Speed | speed hacks, blatant timer | rubberband |
-| Fly | flying, hovering, high jumps | rubberband |
-| NoFall | skipping fall damage | fall damage re-applied |
+| Fly | flying, hovering, high jumps, Spider (hugging walls), Jesus (walking on water), ElytraFly (hovering or level flight without fireworks), BoatFly/EntityFly (a steered vehicle that does not fall) | rubberband / elytra closed / rider ejected |
+| NoFall | skipping fall damage (lying about ground once or many times, or never claiming ground) | fall damage re-applied |
 | Reach | hitting from too far (lag-compensated) | hit cancelled |
 | Aim | hitting targets outside your view (killaura) | hit cancelled |
 | WallHit | hitting through solid blocks | hit cancelled |
@@ -56,6 +56,7 @@ may have been given it.
 | `/novaguard info <player>` | `novaguard.admin` | Ping, Java/Bedrock and current violation levels |
 | `/novaguard exempt <player> <seconds>` | `novaguard.admin` | Skip all checks for a player for a while |
 | `/novaguard reload` | `novaguard.admin` | Reload `config.yml` |
+| `/novaguard untag` | `novaguard.admin` | Remove the anti-dupe ID from the held item before turning it into a kit, crate or shop item |
 | (none) | `novaguard.enchant.bypass` | Items of this player are not checked for illegal enchantments |
 
 ### Monitoring a suspect (`/monitor`)

@@ -4,6 +4,7 @@ import io.github.novablaze.novaguard.CheckType;
 import io.github.novablaze.novaguard.NovaGuardPlugin;
 import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.PlayerData;
+import io.github.novablaze.novaguard.math.Box;
 import io.github.novablaze.novaguard.math.PlaceGeometry;
 import java.util.Locale;
 import org.bukkit.Location;
@@ -15,6 +16,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.util.BoundingBox;
 
 /**
  * Building cheats found in most cheat clients (Meteor, Wurst, LiquidBounce...):
@@ -106,8 +108,16 @@ public final class BuildListener implements Listener {
             return false;
         }
         Location eye = player.getEyeLocation();
-        return !PlaceGeometry.faceVisible(eye.getX(), eye.getY(), eye.getZ(),
-            against.getX(), against.getY(), against.getZ(), dx, dy, dz, FACE_MARGIN);
+        return !PlaceGeometry.faceVisible(eye.getX(), eye.getY(), eye.getZ(), shape(against), dx, dy, dz, FACE_MARGIN);
+    }
+
+    /** The clicked block's real outline (a slab's top is at y + 0.5), or the full cube when it has none. */
+    private static Box shape(Block block) {
+        BoundingBox box = block.getBoundingBox();
+        if (box.getVolume() <= 0) {
+            return new Box(block.getX(), block.getY(), block.getZ(), block.getX() + 1, block.getY() + 1, block.getZ() + 1);
+        }
+        return new Box(box.getMinX(), box.getMinY(), box.getMinZ(), box.getMaxX(), box.getMaxY(), box.getMaxZ());
     }
 
     private static String face(BlockPlaceEvent event) {

@@ -146,6 +146,14 @@ public record MonitorVerdict(Level level, double score, List<String> reasons, Li
             combat += 2;
             reasons.add(e.flags(CheckType.BLOCK_REACH) + " BlockReach flags (placing/breaking too far away)");
         }
+        int building = e.flags(CheckType.FAST_BREAK) + e.flags(CheckType.FAST_PLACE) + e.flags(CheckType.SCAFFOLD);
+        if (building >= 20) {
+            combat += 3;
+            reasons.add(building + " FastBreak/FastPlace/Scaffold flags (nuker, tower or scaffold)");
+        } else if (building >= 5) {
+            combat += 2;
+            reasons.add(building + " FastBreak/FastPlace/Scaffold flags (nuker, tower or scaffold)");
+        }
         if (e.flags(CheckType.AUTOCLICKER) >= 2) {
             combat += 2;
             reasons.add(e.flags(CheckType.AUTOCLICKER) + " AutoClicker flags");

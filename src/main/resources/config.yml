@@ -28,8 +28,10 @@ lag:
   spike-grace-ms: 1500
   # Movement checks pause while the server TPS is below this.
   min-tps-for-movement: 18.0
-  # Movement checks pause for players with a ping above this (ms).
-  max-ping-for-movement: 1000
+  # Movement checks pause for players with a ping above this (ms). -1 = never pause (default): a PingSpoof
+  # cheat can fake any ping, so a ping limit would switch the checks off for cheaters. Lag is handled by
+  # the burst detection and a speed budget that grows with ping (capped).
+  max-ping-for-movement: -1
 
 kick:
   # Only used when ban-waves are disabled (a kick would tell a cheater that they were detected).
@@ -73,8 +75,10 @@ checks:
     mode: enforce
     kick-vl: 0
     suspect-vl: 3
-    # Moves where the client lies about standing on ground before NoFall triggers.
-    min-spoofs: 3
+    # Moves where the client lies about standing on ground before NoFall triggers. 1 = any lie that saved
+    # fall damage (NoFall cheats often lie only once per fall). Clients that never claim ground at all
+    # ("NoGround") are caught separately when they land.
+    min-spoofs: 1
   reach:
     enabled: true
     mode: enforce
@@ -191,6 +195,9 @@ alts:
   enabled: true
   # An IP used by more accounts than this is treated as shared (school, cafe, proxy) and never linked or banned.
   max-accounts-per-ip: 5
+  # Only link an account to its IP after it stayed online this long, so it has logged in (AuthMe). Joining
+  # with someone else's name without the password then links nothing.
+  record-after-seconds: 120
 
 watchdog:
   # Warn in the console when one check takes longer than this for a single event (milliseconds).

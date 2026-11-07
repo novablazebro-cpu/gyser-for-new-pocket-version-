@@ -63,7 +63,7 @@ public final class Exemptions {
         if (now < data.graceUntilMs) {
             return true;
         }
-        if (plugin.lag().tps() < settings.minTpsForMovement || player.getPing() > settings.maxPingForMovement) {
+        if (plugin.lag().tps() < settings.minTpsForMovement || settings.maxPingForMovement > 0 && player.getPing() > settings.maxPingForMovement) {
             return true;
         }
         return hasCustomPhysics(player);

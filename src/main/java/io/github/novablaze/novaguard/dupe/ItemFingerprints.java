@@ -24,7 +24,10 @@ import org.bukkit.GameMode;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.block.Container;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 
@@ -38,6 +41,13 @@ public final class ItemFingerprints {
 
     /** Safety limit for one scan: each undupe is followed by a fresh look, so nested items stay correct. */
     private static final int MAX_FIXES_PER_SCAN = 32;
+    /** A "received it normally" record only decides an undupe for this long: old receipts prove nothing. */
+    private static final long RECEIPT_TRUST_MS = 30 * 60_000L;
+    /** Accounts after which an ID counts as a plugin template (kit/crate copy) instead of a dupe. */
+    private static final int TEMPLATE_OWNERS = 3;
+
+    private record Received(UUID player, long atMs) {
+    }
 
     /**
      * One tagged item that was found.
@@ -56,8 +66,14 @@ public final class ItemFingerprints {
     private final NamespacedKey key;
     /** Item ID -> the player whose storage it was last seen in. */
     private final Map<String, UUID> lastHolder = new HashMap<>();
-    /** Item ID -> the player who last received it normally (picked it up, took it out of a chest). */
-    private final Map<String, UUID> receivedBy = new HashMap<>();
+    /** Item ID -> the player who last received it normally (picked it up, took it out of a chest), and when. */
+    private final Map<String, Received> receivedBy = new HashMap<>();
+    /**
+     * Item ID -> accounts it was seen with (at most {@link #TEMPLATE_OWNERS}). An ID held by that many
+     * accounts is a template copied by a plugin (a kit, crate or shop item created from a tagged item), not a
+     * dupe: such IDs are reported but never deleted.
+     */
+    private final Map<String, Set<UUID>> ownersSeen = new HashMap<>();
     /** Item IDs already alerted without a fix, so an unclear case is reported once, not on every scan. */
     private final Set<String> reported = new HashSet<>();
 
@@ -73,16 +89,52 @@ public final class ItemFingerprints {
         if (item == null || item.isEmpty()) {
             return;
         }
+        Received receipt = new Received(player.getUniqueId(), System.currentTimeMillis());
         String id = readId(item);
         if (id != null) {
-            receivedBy.put(id, player.getUniqueId());
+            receivedBy.put(id, receipt);
         }
         for (ItemStack inner : nestedItems(item)) {
             String innerId = readId(inner);
             if (innerId != null) {
-                receivedBy.put(innerId, player.getUniqueId());
+                receivedBy.put(innerId, receipt);
             }
         }
+    }
+
+    /**
+     * Removes the hidden ID from an item (and from items inside it), so it can be used as a template for a
+     * kit, crate or shop without every copy looking like a dupe. Returns how many IDs were removed.
+     */
+    public int untag(ItemStack item) {
+        if (item == null || item.isEmpty()) {
+            return 0;
+        }
+        int removed = 0;
+        if (readId(item) != null) {
+            item.editPersistentDataContainer(pdc -> pdc.remove(key));
+            removed++;
+        }
+        ItemContainerContents container = item.getData(DataComponentTypes.CONTAINER);
+        BundleContents bundle = item.getData(DataComponentTypes.BUNDLE_CONTENTS);
+        if (container != null || bundle != null) {
+            List<ItemStack> inner = new ArrayList<>(container != null ? container.contents() : bundle.contents());
+            int innerRemoved = 0;
+            for (int i = 0; i < inner.size(); i++) {
+                ItemStack copy = inner.get(i).clone();
+                innerRemoved += untag(copy);
+                inner.set(i, copy);
+            }
+            if (innerRemoved > 0) {
+                if (container != null) {
+                    item.setData(DataComponentTypes.CONTAINER, ItemContainerContents.containerContents(inner));
+                } else {
+                    item.setData(DataComponentTypes.BUNDLE_CONTENTS, BundleContents.bundleContents(inner));
+                }
+                removed += innerRemoved;
+            }
+        }
+        return removed;
     }
 
     // ---------------------------------------------------------------- scan
@@ -107,6 +159,12 @@ public final class ItemFingerprints {
             }
         }
         before.keySet().forEach(id -> lastHolder.put(id, player.getUniqueId()));
+        for (Found f : own) {
+            Set<UUID> owners = ownersSeen.computeIfAbsent(f.id(), k -> new HashSet<>());
+            if (owners.size() < TEMPLATE_OWNERS) {
+                owners.add(f.owner());
+            }
+        }
 
         for (int fixes = 0; fixes < MAX_FIXES_PER_SCAN; fixes++) {
             if (!undupeOne(player.getName(), own, before, settings.removeDuplicates)) {
@@ -144,13 +202,19 @@ public final class ItemFingerprints {
             copies.sort(Comparator.comparing(f -> !f.topLevel()));
             List<Copy<Found>> input = new ArrayList<>();
             copies.forEach(f -> input.add(new Copy<>(f.owner(), f)));
-            Verdict<Found> verdict = DupeResolver.resolve(input, receivedBy.get(id));
+            Received receipt = receivedBy.get(id);
+            UUID receiver = receipt != null && System.currentTimeMillis() - receipt.atMs() < RECEIPT_TRUST_MS
+                ? receipt.player() : null;
+            Verdict<Found> verdict = DupeResolver.resolve(input, receiver);
 
             String places = describe(copies);
-            if (!remove || verdict.remove().isEmpty()) {
+            boolean template = ownersSeen.getOrDefault(id, Set.of()).size() >= TEMPLATE_OWNERS;
+            if (!remove || template || verdict.remove().isEmpty()) {
                 if (reported.add(id)) {
+                    String why = template ? "this ID was seen with " + TEMPLATE_OWNERS + "+ accounts, so it is"
+                        + " probably a kit/crate copy made by a plugin (strip it with /ng untag)" : verdict.reason();
                     plugin.violations().dupeAlert(playerName, copies.size() + " copies of one item (ID "
-                        + shortId(id) + ") in " + places + (remove ? " - not deleted: " + verdict.reason() : ""));
+                        + shortId(id) + ") in " + places + (remove ? " - not deleted: " + why : ""));
                 }
                 continue;
             }
@@ -286,8 +350,16 @@ public final class ItemFingerprints {
         return item.getMaxStackSize() == 1 && plugin.settings().fingerprintMaterials.contains(item.getType());
     }
 
-    /** Real block storage. Plugin menus, anvils, crafting views and other players' inventories are excluded. */
+    /**
+     * Real block storage: a chest, barrel, shulker box, hopper, dispenser or dropper that exists in the world.
+     * Plugin menus (shops, /pv, invsee mirrors) use the same window types but have no block behind them,
+     * so they are excluded: their icons are not real items and must never be tagged, trimmed or deleted.
+     */
     public static boolean isStorage(Inventory inventory) {
+        InventoryHolder holder = inventory.getHolder(false);
+        if (!(holder instanceof Container) && !(holder instanceof DoubleChest)) {
+            return false;
+        }
         InventoryType type = inventory.getType();
         return type == InventoryType.CHEST || type == InventoryType.BARREL || type == InventoryType.SHULKER_BOX
             || type == InventoryType.HOPPER || type == InventoryType.DISPENSER || type == InventoryType.DROPPER;

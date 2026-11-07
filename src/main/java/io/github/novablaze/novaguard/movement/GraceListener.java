@@ -35,10 +35,13 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerRiptideEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerToggleFlightEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 /**
@@ -46,6 +49,13 @@ import org.bukkit.util.Vector;
  * and keeps player data in sync with join, quit, teleport and respawn.
  */
 public final class GraceListener implements Listener {
+
+    /** A wind charge's burst pushes entities up to about 2.4 blocks away; plus half a player's height. */
+    private static final double WIND_RADIUS = 3.0;
+    /** Effects that change how fast or high a player may move. Others (Haste, Night Vision...) do not. */
+    private static final java.util.Set<PotionEffectType> MOVEMENT_EFFECTS = java.util.Set.of(
+        PotionEffectType.JUMP_BOOST, PotionEffectType.LEVITATION, PotionEffectType.SLOW_FALLING,
+        PotionEffectType.SPEED, PotionEffectType.SLOWNESS, PotionEffectType.DOLPHINS_GRACE);
 
     private final NovaGuardPlugin plugin;
 
@@ -60,7 +70,15 @@ public final class GraceListener implements Listener {
         long now = System.currentTimeMillis();
         data.resetMovement(player.getLocation(), now);
         data.grace(now, 5000);
-        plugin.alts().onJoin(player);
+        // On cracked servers anyone can join with any name before logging in (AuthMe). Linking accounts to an
+        // IP right away would let a cheater fake "shared IPs" or make innocent names look like his alts, so
+        // the link is only recorded once the player has stayed online long enough to have logged in.
+        long delayTicks = plugin.settings().altsRecordAfterSeconds * 20L;
+        org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (player.isOnline() && org.bukkit.Bukkit.getPlayer(player.getUniqueId()) == player) {
+                plugin.alts().onJoin(player);
+            }
+        }, Math.max(1L, delayTicks));
         plugin.monitor().onJoin(player, data);
     }
 
@@ -161,12 +179,18 @@ public final class GraceListener implements Listener {
         }
     }
 
-    /** Wind charges launch every nearby player, including the thrower. */
+    /**
+     * Wind charges launch players close to the burst, including the thrower. Only players that are really in
+     * reach of the burst get grace: a wind charge exploding on a far wall pushes nobody, so throwing them
+     * around cannot be used to switch the movement checks off.
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onProjectileHit(ProjectileHitEvent event) {
         if (event.getEntity() instanceof AbstractWindCharge windCharge) {
-            for (Entity entity : windCharge.getWorld().getNearbyEntities(windCharge.getLocation(), 5, 5, 5)) {
-                if (entity instanceof Player player) {
+            Location burst = windCharge.getLocation();
+            for (Entity entity : windCharge.getWorld().getNearbyEntities(burst, WIND_RADIUS, WIND_RADIUS, WIND_RADIUS)) {
+                if (entity instanceof Player player
+                    && player.getBoundingBox().getCenter().distanceSquared(burst.toVector()) <= WIND_RADIUS * WIND_RADIUS) {
                     grace(player, 2500 + player.getPing());
                 }
             }
@@ -220,10 +244,20 @@ public final class GraceListener implements Listener {
         }
     }
 
-    /** Jump Boost, Levitation, Slow Falling, Speed... starting or ending changes the limits mid-air. */
+    /**
+     * Jump Boost, Levitation, Slow Falling, Speed... starting, ending or changing strength changes the limits
+     * mid-air. A beacon or conduit refreshing the same effect every few seconds changes nothing, so it gives
+     * no grace (otherwise standing next to a beacon would switch the checks off most of the time).
+     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEffect(EntityPotionEffectEvent event) {
-        if (event.getEntity() instanceof Player player) {
+        if (!(event.getEntity() instanceof Player player) || !MOVEMENT_EFFECTS.contains(event.getModifiedType())) {
+            return;
+        }
+        PotionEffect before = event.getOldEffect();
+        PotionEffect after = event.getNewEffect();
+        boolean sameStrength = before != null && after != null && before.getAmplifier() == after.getAmplifier();
+        if (!sameStrength) {
             grace(player, 1500);
         }
     }
@@ -245,8 +279,17 @@ public final class GraceListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemHeld(PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
+        rememberPreviousItem(player, player.getInventory().getItem(event.getPreviousSlot()));
+    }
+
+    /** The offhand key (F) swaps hands: the item leaving the main hand is the one going to the offhand. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSwapHands(PlayerSwapHandItemsEvent event) {
+        rememberPreviousItem(event.getPlayer(), event.getOffHandItem());
+    }
+
+    private void rememberPreviousItem(Player player, ItemStack previous) {
         PlayerData data = plugin.players().get(player);
-        ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
         AttackRange range = previous == null || previous.isEmpty() ? null : previous.getData(DataComponentTypes.ATTACK_RANGE);
         data.previousItemReach = range != null ? range.maxReach() : 0;
         data.previousItemMargin = range != null ? range.hitboxMargin() : 0;

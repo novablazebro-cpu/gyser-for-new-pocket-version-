@@ -60,3 +60,6 @@
 | Chunk overloading | An exploit: packing thousands of entities into one chunk to lag or crash the server ("lag machine", "chunk ban"). | `dupe/ChunkGuard.java` |
 | Nuker / Scaffold / FastPlace | Cheat-client modules: break blocks around you, place blocks under you automatically, place blocks too fast. | `combat/BuildListener.java` |
 | Reflection | Java code reading or calling another class's private parts; used only in test harnesses, never in the plugin. | The test plugins that call `undupeOne` on a real server |
+| False positive | An innocent player flagged as a cheater. Every check is tuned so that legit play (spears, maces, wind charges, pearls) never triggers it. | Code review fixes in `movement/` and `combat/` |
+| PingSpoof | A cheat that fakes a high ping. Any rule "skip checks above ping X" is a bypass, so NovaGuard no longer has one by default. | `lag.max-ping-for-movement: -1` |
+| Template item | One item copied many times on purpose by a plugin (kits, crates). Its copies share a hidden ID but are not a dupe. | `ItemFingerprints.ownersSeen`, `/ng untag` |

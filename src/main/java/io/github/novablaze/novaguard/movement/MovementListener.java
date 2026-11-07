@@ -18,6 +18,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
@@ -61,6 +62,9 @@ public final class MovementListener implements Listener, Runnable {
             data.resetMovement(to, now);
             return;
         }
+        if (player.isGliding()) {
+            checkElytra(player, data, settings, from, to, now);
+        }
         if (plugin.exemptions().skipMovement(player, data, now)) {
             data.resetMovement(to, now);
             data.speedBudget.fill(now);
@@ -75,7 +79,8 @@ public final class MovementListener implements Listener, Runnable {
         }
         double dy = to.getY() - from.getY();
         double horizontal = Math.hypot(to.getX() - from.getX(), to.getZ() - from.getZ());
-        if (env.grounded() || env.supported()) {
+        if (env.grounded() || env.supported() || player.hasPotionEffect(PotionEffectType.LEVITATION)) {
+            // Levitation lifts at a steady speed by design: it is not leftover launch momentum.
             data.momentum.stop();
         } else if (data.afterSkip) {
             // Grace ended while still in the air (TNT cannon, slime launcher): track the leftover momentum.
@@ -98,6 +103,59 @@ public final class MovementListener implements Listener, Runnable {
             data.speedBudget.empty(now);
         } else if (env.grounded() || env.supported()) {
             data.lastGood = to.clone();
+        }
+    }
+
+    /**
+     * ElytraFly: an elytra only glides. Without a firework boost it cannot hover (it stalls and drops), and
+     * it cannot fly level for long without losing speed (holding height costs speed, and air drag takes
+     * 1% per tick). Both are physics, so a skilled pilot never trips them.
+     */
+    private void checkElytra(Player player, PlayerData data, Settings settings, Location from, Location to, long now) {
+        if (!settings.enabled(CheckType.FLY) || plugin.exemptions().skipAll(player, data, now)
+            || player.getAllowFlight() || player.isRiptiding() || now < data.graceUntilMs
+            || now < data.elytraBoostUntilMs || plugin.lag().tps() < settings.minTpsForMovement
+            || Environment.probe(player, to).supported() || Environment.platformNearby(player)) {
+            data.elytraStallMoves = 0;
+            data.elytraLevelMoves = 0;
+            return;
+        }
+        double dy = to.getY() - from.getY();
+        double speed = Math.hypot(to.getX() - from.getX(), to.getZ() - from.getZ());
+        boolean ceiling = player.getWorld().hasCollisionsIn(player.getBoundingBox().shift(0, 0.1, 0));
+        // Hovering: almost no forward speed and not sinking.
+        data.elytraStallMoves = speed < 0.15 && dy >= -0.02 && !ceiling ? data.elytraStallMoves + 1 : 0;
+        // Level flight that does not lose speed.
+        if (Math.abs(dy) <= 0.02 && speed >= 0.15 && !ceiling) {
+            if (data.elytraLevelMoves++ == 0) {
+                data.elytraLevelStartSpeed = speed;
+            }
+        } else {
+            data.elytraLevelMoves = 0;
+        }
+        String detail = null;
+        if (data.elytraStallMoves >= 20) {
+            detail = "hovered with an elytra without a firework";
+        } else if (data.elytraLevelMoves >= 40 && speed >= data.elytraLevelStartSpeed * 0.9) {
+            detail = String.format(Locale.ROOT, "flew level with an elytra for 2s at %.2f blocks/tick without slowing down",
+                speed);
+        }
+        if (detail == null) {
+            return;
+        }
+        data.elytraStallMoves = 0;
+        data.elytraLevelMoves = 0;
+        if (plugin.violations().flag(player, data, CheckType.FLY, 1.0, detail)) {
+            player.setGliding(false); // the elytra closes and the player falls
+        }
+    }
+
+    /** A firework rocket used while gliding: the boost lasts up to about 2.5 seconds (flight duration 3). */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBoost(com.destroystokyo.paper.event.player.PlayerElytraBoostEvent event) {
+        PlayerData data = plugin.players().getIfPresent(event.getPlayer().getUniqueId());
+        if (data != null) {
+            data.elytraBoostUntilMs = System.currentTimeMillis() + 3500 + event.getPlayer().getPing();
         }
     }
 
@@ -240,9 +298,11 @@ public final class MovementListener implements Listener, Runnable {
             // Vanilla gives no fall damage here either.
             data.fallDistance = 0;
             data.groundSpoofs = 0;
+            data.noGroundMoves = 0;
             return;
         }
         if (!env.grounded()) {
+            data.noGroundMoves = 0; // only grounded moves in a row count as a denied landing
             if (dy < 0) {
                 data.fallDistance -= dy;
                 if (player.isOnGround()) {
@@ -257,28 +317,51 @@ public final class MovementListener implements Listener, Runnable {
             }
             return;
         }
-        if (settings.enabled(CheckType.NOFALL) && data.groundSpoofs >= settings.noFallMinSpoofs && !env.softLanding()) {
-            double safe = Exemptions.attribute(player, Attribute.SAFE_FALL_DISTANCE, 3.0);
-            double multiplier = Exemptions.attribute(player, Attribute.FALL_DAMAGE_MULTIPLIER, 1.0);
-            double damage = Math.ceil((data.fallDistance - safe) * multiplier);
-            if (damage >= 1.0) {
-                boolean enforce = plugin.violations().flag(player, data, CheckType.NOFALL, 1.0,
-                    String.format(Locale.ROOT, "fell %.1f blocks while claiming ground", data.fallDistance));
-                if (!enforce) {
-                    data.fallDistance = 0;
-                    data.groundSpoofs = 0;
-                    return;
-                }
-                // Damage on the next tick, outside the move event. Armor and Feather Falling still apply.
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (player.isOnline() && !player.isDead()) {
-                        player.damage(damage, DamageSource.builder(DamageType.FALL).build());
-                    }
-                });
+        double safe = Exemptions.attribute(player, Attribute.SAFE_FALL_DISTANCE, 3.0);
+        double multiplier = Exemptions.attribute(player, Attribute.FALL_DAMAGE_MULTIPLIER, 1.0);
+        double damage = Math.ceil((data.fallDistance - safe) * multiplier);
+        String lie = null;
+        if (!player.isOnGround() && damage >= 1.0 && !env.softLanding()) {
+            // The server sees the player land, but the client says it is still in the air. Vanilla only deals
+            // fall damage when the client claims ground, so a "NoGround" client never takes any. A real
+            // client touches down within a move or two: give it three before calling it a lie.
+            if (++data.noGroundMoves < 3) {
+                return; // keep the fall distance until the client admits the landing
             }
+            lie = String.format(Locale.ROOT, "landed after %.1f blocks but never claimed ground", data.fallDistance);
+        } else if (data.groundSpoofs >= settings.noFallMinSpoofs && damage >= 1.0 && !env.softLanding()) {
+            lie = String.format(Locale.ROOT, "fell %.1f blocks while claiming ground %d time(s)",
+                data.fallDistance, data.groundSpoofs);
         }
         data.fallDistance = 0;
         data.groundSpoofs = 0;
+        data.noGroundMoves = 0;
+        if (lie == null || !settings.enabled(CheckType.NOFALL)
+            || !plugin.violations().flag(player, data, CheckType.NOFALL, 1.0, lie)) {
+            return;
+        }
+        // Damage on the next tick, outside the move event. Armor and Feather Falling still apply.
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (player.isOnline() && !player.isDead()) {
+                player.damage(damage, DamageSource.builder(DamageType.FALL).build());
+            }
+        });
+    }
+
+    /**
+     * Vanilla dealt fall damage itself (the client told the truth at some point): the fall is paid for, so
+     * NoGround / spoof tracking starts over. This also stops double damage after a ghost block.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFallDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player player && event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+            PlayerData data = plugin.players().getIfPresent(player.getUniqueId());
+            if (data != null) {
+                data.fallDistance = 0;
+                data.groundSpoofs = 0;
+                data.noGroundMoves = 0;
+            }
+        }
     }
 
     private static void setback(PlayerMoveEvent event, PlayerData data, long now) {
@@ -290,6 +373,7 @@ public final class MovementListener implements Listener, Runnable {
         data.selfTeleportUntilMs = now + 1000;
         event.setTo(target);
         data.resetMovement(target, now);
+        data.momentum.stop(); // the player is back on a known spot: old launch momentum no longer applies
         // Empty, not full: otherwise every setback would hand a speed hacker a fresh second of free movement.
         data.speedBudget.empty(now);
     }

@@ -67,6 +67,15 @@ public final class PlayerData {
     public long bounceUntilMs;
     public double fallDistance;
     public int groundSpoofs;
+    /** Moves in a row where the server sees the player on the ground after a fall but the client denies it. */
+    public int noGroundMoves;
+    /** When the vehicle this player steers left the ground without falling (0 = on the ground). */
+    public long vehicleAirSinceMs;
+    /** Elytra: a firework boost (or wind charge) keeps the glide going until then. */
+    public long elytraBoostUntilMs;
+    public int elytraStallMoves;
+    public int elytraLevelMoves;
+    public double elytraLevelStartSpeed;
 
     // Combat
     public final ClickWindow clicks = new ClickWindow();
