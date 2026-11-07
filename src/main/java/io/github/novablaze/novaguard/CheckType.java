@@ -14,6 +14,9 @@ public enum CheckType {
     AUTOCLICKER("autoclicker", "AutoClicker"),
     BLOCK_REACH("block-reach", "BlockReach"),
     VELOCITY("velocity", "Velocity"),
+    FAST_BREAK("fast-break", "FastBreak"),
+    FAST_PLACE("fast-place", "FastPlace"),
+    SCAFFOLD("scaffold", "Scaffold"),
     DUPE("dupe", "AntiDupe");
 
     private final String configKey;

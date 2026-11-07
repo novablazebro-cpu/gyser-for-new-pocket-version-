@@ -56,3 +56,7 @@
 | Zero-day | A bug that attackers know before the developers do, so no fix exists yet. | Why no anti-dupe can promise "every dupe" |
 | Invariant | A rule that must always be true, e.g. "one item ID exists only once". Breaking it proves a bug. | `dupe/ItemFingerprints.java` |
 | Config audit | A check that reads settings and warns when one is unsafe. | `dupe/ConfigRisks.java`, `DUPE RISK` lines |
+| Undupe | Deleting the extra copies of a duplicated item so only one remains. | `dupe/ItemFingerprints.java`, rules in `math/DupeResolver.java` |
+| Chunk overloading | An exploit: packing thousands of entities into one chunk to lag or crash the server ("lag machine", "chunk ban"). | `dupe/ChunkGuard.java` |
+| Nuker / Scaffold / FastPlace | Cheat-client modules: break blocks around you, place blocks under you automatically, place blocks too fast. | `combat/BuildListener.java` |
+| Reflection | Java code reading or calling another class's private parts; used only in test harnesses, never in the plugin. | The test plugins that call `undupeOne` on a real server |

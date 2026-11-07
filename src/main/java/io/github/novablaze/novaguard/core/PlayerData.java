@@ -72,6 +72,11 @@ public final class PlayerData {
     public final ClickWindow clicks = new ClickWindow();
     public final TargetWindow targets = new TargetWindow();
     public int cpsStrikes;
+
+    // Building
+    public final io.github.novablaze.novaguard.math.SustainedRate breaks = new io.github.novablaze.novaguard.math.SustainedRate();
+    public final io.github.novablaze.novaguard.math.SustainedRate places = new io.github.novablaze.novaguard.math.SustainedRate();
+    public int scaffoldBuffer;
     public long lastCpsStrikeMs;
     public double reachBuffer;
     public int aimBuffer;

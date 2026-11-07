@@ -68,6 +68,24 @@ public final class DupeListener implements Listener, Runnable {
             () -> guardContainer(event.getWhoClicked(), event.getView().getTopInventory(), event));
     }
 
+    /** Taking an item out of a chest is a normal way to receive it: the undupe keeps that player's copy. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTake(InventoryClickEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (event.getWhoClicked() instanceof Player player && event.getClickedInventory() == top
+            && ItemFingerprints.isStorage(top)) {
+            plugin.safety().run("anti-dupe", () -> plugin.fingerprints().received(player, event.getCurrentItem()));
+        }
+    }
+
+    /** Picking an item up from the ground is a normal way to receive it. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPickedUp(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            plugin.safety().run("anti-dupe", () -> plugin.fingerprints().received(player, event.getItem().getItemStack()));
+        }
+    }
+
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
         plugin.safety().run("anti-dupe",

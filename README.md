@@ -30,7 +30,10 @@ servers that also run Geyser/Floodgate.
 | WallHit | hitting through solid blocks | hit cancelled |
 | MultiTarget | switching between many targets very fast | hit cancelled |
 | AutoClicker | extreme attack speed | extra hits cancelled |
-| AntiDupe | overstacked items, entity-chest dupes, duplicated valuables | trimmed / blocked / alert |
+| FastBreak | Nuker: more blocks broken per second than one per tick | break cancelled |
+| FastPlace | FastPlace / Tower: more blocks placed per second than the right-click delay allows | place cancelled |
+| Scaffold | placing against a block face that points away from the player | place cancelled |
+| AntiDupe | overstacked items, entity-chest dupes, duplicated valuables | trimmed / blocked / undupe |
 | IllegalEnchant | Sharpness 6/10, enchantments on the wrong item, conflicting pairs (also in books, shulkers, bundles) | enchantment removed / alert |
 
 ### Illegal enchantments
@@ -141,8 +144,16 @@ layers, so a dupe has to get past all of them:
    entity died, teleported or is far away, and in chest/barrel/shulker windows whose block was broken,
    pushed or replaced. Hoppers cannot move items into or out of a removed entity or pick up a removed item.
 3. **Impossible items are repaired.** Overstacked stacks are trimmed; illegal enchantments are removed.
-4. **Unknown dupes are still caught afterwards.** Valuable items get a hidden ID; two copies of one ID prove a
-   dupe whatever method was used, and staff are alerted.
+4. **Unknown dupes are undone afterwards ("undupe", on by default).** Valuable items get a hidden ID; two
+   copies of one ID prove a dupe whatever method was used. The extra copies are deleted, also inside shulker
+   boxes and bundles, without hurting innocent players:
+   - one player holds several copies: one is kept, the rest deleted (they still have their item);
+   - two players hold it and one *received* it normally (picked it up, took it out of a chest): that player
+     keeps it, and the one who gave it away but still has it (the duper) loses the copy;
+   - two players hold it and nobody knows who received it: nobody loses their only copy, staff are alerted.
+5. **Chunk overloading is stopped.** More than 1000 loose items/XP orbs/arrows/falling blocks in one chunk
+   (lag machines, "chunk bans" that crash the server and can roll it back) are trimmed when the chunk loads
+   and every 15 seconds. Mobs, item frames, armour stands, minecarts, boats and ender pearls are never touched.
 
 Keep Paper updated: that is where server-side dupes get fixed.
 

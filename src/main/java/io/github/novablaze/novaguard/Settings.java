@@ -66,6 +66,11 @@ public final class Settings {
     public final long multiWindowMs;
     public final int maxCps;
     public final int cpsSeconds;
+    public final int fastBreakMax;
+    public final int fastBreakSeconds;
+    public final int fastPlaceMax;
+    public final int fastPlaceSeconds;
+    public final int scaffoldBuffer;
 
     public final boolean banWaves;
     public final int banMinSessions;
@@ -104,6 +109,9 @@ public final class Settings {
     public final boolean fixOverstacked;
     public final boolean entityContainerGuard;
     public final boolean blockContainerGuard;
+    public final boolean chunkGuardEnabled;
+    public final int chunkMaxLoose;
+    public final long chunkScanTicks;
     public final boolean fingerprintsEnabled;
     public final boolean removeDuplicates;
     public final long fingerprintScanTicks;
@@ -166,6 +174,12 @@ public final class Settings {
         // ClickWindow can count at most 64 attacks per second; a higher limit would silently disable the check.
         maxCps = Math.min(60, Math.max(5, c.getInt("checks.autoclicker.max-cps", 22)));
         cpsSeconds = Math.max(1, c.getInt("checks.autoclicker.seconds", 3));
+        // SustainedRate counts at most 64 actions per second, so higher limits are capped.
+        fastBreakMax = Math.min(60, Math.max(5, c.getInt("checks.fast-break.max-per-second", 22)));
+        fastBreakSeconds = Math.max(1, c.getInt("checks.fast-break.seconds", 2));
+        fastPlaceMax = Math.min(60, Math.max(5, c.getInt("checks.fast-place.max-per-second", 15)));
+        fastPlaceSeconds = Math.max(1, c.getInt("checks.fast-place.seconds", 2));
+        scaffoldBuffer = Math.max(1, c.getInt("checks.scaffold.buffer", 2));
 
         banWaves = c.getBoolean("ban-waves.enabled", true);
         banMinSessions = Math.max(1, c.getInt("ban-waves.min-sessions", 2));
@@ -207,8 +221,11 @@ public final class Settings {
         fixOverstacked = c.getBoolean("anti-dupe.fix-overstacked", true);
         entityContainerGuard = c.getBoolean("anti-dupe.entity-container-guard", true);
         blockContainerGuard = c.getBoolean("anti-dupe.block-container-guard", true);
+        chunkGuardEnabled = c.getBoolean("chunk-guard.enabled", true);
+        chunkMaxLoose = Math.max(100, c.getInt("chunk-guard.max-loose-entities", 1000));
+        chunkScanTicks = Math.max(5, c.getLong("chunk-guard.scan-interval-seconds", 15)) * 20L;
         fingerprintsEnabled = c.getBoolean("anti-dupe.fingerprints.enabled", true);
-        removeDuplicates = c.getBoolean("anti-dupe.fingerprints.remove-duplicates", false);
+        removeDuplicates = c.getBoolean("anti-dupe.fingerprints.remove-duplicates", true);
         fingerprintScanTicks = Math.max(10, c.getLong("anti-dupe.fingerprints.scan-interval-seconds", 60)) * 20L;
         fingerprintMaterials = EnumSet.noneOf(Material.class);
         for (String name : c.getStringList("anti-dupe.fingerprints.materials")) {

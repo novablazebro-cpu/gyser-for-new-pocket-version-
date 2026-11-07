@@ -130,6 +130,32 @@ checks:
     mode: enforce
     kick-vl: 0
     suspect-vl: 3
+  fast-break:
+    # Nuker / FastBreak: breaking more blocks per second than a player can. Minecraft itself already
+    # refuses hard blocks broken too fast; this catches nukers that clear many soft blocks at once.
+    enabled: true
+    mode: enforce
+    kick-vl: 0
+    suspect-vl: 5
+    # One block per tick (20/s) is the human maximum with instant mining.
+    max-per-second: 22
+    seconds: 2
+  fast-place:
+    # FastPlace / Tower: placing more blocks per second than the right-click delay allows.
+    enabled: true
+    mode: enforce
+    kick-vl: 0
+    suspect-vl: 5
+    max-per-second: 15
+    seconds: 2
+  scaffold:
+    # Scaffold: placing a block against a face that points away from the player (impossible to click).
+    enabled: true
+    mode: enforce
+    kick-vl: 0
+    suspect-vl: 5
+    # Impossible placements in a row before it counts.
+    buffer: 2
 
 monitor:
   # /monitor <player> watches a player this long, then writes a report to plugins/NovaGuard/reports/.
@@ -204,9 +230,12 @@ anti-dupe:
   block-container-guard: true
   fingerprints:
     enabled: true
-    # Delete the extra copy of a duplicated item (only when both copies are in the same scan).
-    # Off by default: deleting a real item by mistake is worse than missing a dupe.
-    remove-duplicates: false
+    # Undupe: delete the extra copies of a duplicated item. Innocent players keep their item:
+    #  - one player holds several copies (also inside shulkers/bundles): one copy is kept, the rest deleted;
+    #  - two players hold it and one RECEIVED it normally (picked it up or took it out of a chest): that
+    #    player keeps it, and the one who gave it away but still has it loses the copy (the duper);
+    #  - two players hold it and nobody knows who received it: nobody loses their only copy, staff alerted.
+    remove-duplicates: true
     scan-interval-seconds: 60
     # Only unstackable items from this list get a hidden ID.
     materials:
@@ -241,6 +270,15 @@ anti-dupe:
       - GREEN_SHULKER_BOX
       - RED_SHULKER_BOX
       - BLACK_SHULKER_BOX
+
+chunk-guard:
+  # Against chunk overloading (lag machines and "chunk bans"): thousands of dropped items, XP orbs, arrows,
+  # snowballs or falling blocks packed into one chunk. Above the limit the extra ones are removed when the
+  # chunk loads and every scan-interval-seconds. Mobs, item frames, armour stands, minecarts, boats, ender
+  # pearls and thrown tridents are never removed. Normal farms stay far below 1000.
+  enabled: true
+  max-loose-entities: 1000
+  scan-interval-seconds: 15
 
 illegal-enchantments:
   # Find and fix enchantments that are impossible in survival. NovaGuard asks Minecraft itself what is legal

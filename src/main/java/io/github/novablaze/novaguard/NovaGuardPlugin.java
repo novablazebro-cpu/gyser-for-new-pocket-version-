@@ -2,6 +2,7 @@ package io.github.novablaze.novaguard;
 
 import io.github.novablaze.novaguard.ban.BanManager;
 import io.github.novablaze.novaguard.combat.BlockReachListener;
+import io.github.novablaze.novaguard.combat.BuildListener;
 import io.github.novablaze.novaguard.combat.CombatListener;
 import io.github.novablaze.novaguard.core.AltTracker;
 import io.github.novablaze.novaguard.core.Notifier;
@@ -12,6 +13,7 @@ import io.github.novablaze.novaguard.core.LagMonitor;
 import io.github.novablaze.novaguard.core.PlayerData;
 import io.github.novablaze.novaguard.core.PlayerDataManager;
 import io.github.novablaze.novaguard.core.ViolationManager;
+import io.github.novablaze.novaguard.dupe.ChunkGuard;
 import io.github.novablaze.novaguard.dupe.DupeListener;
 import io.github.novablaze.novaguard.dupe.ItemFingerprints;
 import io.github.novablaze.novaguard.items.EnchantmentGuard;
@@ -46,6 +48,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private BukkitTask fingerprintTask;
     private EnchantmentGuard enchantGuard;
     private BukkitTask enchantTask;
+    private ChunkGuard chunkGuard;
+    private BukkitTask chunkTask;
 
     @Override
     public void onEnable() {
@@ -66,13 +70,16 @@ public final class NovaGuardPlugin extends JavaPlugin {
         MovementListener movement = new MovementListener(this);
         dupeListener = new DupeListener(this);
         enchantGuard = new EnchantmentGuard(this);
+        chunkGuard = new ChunkGuard(this);
         PluginManager pluginManager = getServer().getPluginManager();
         pluginManager.registerEvents(new GraceListener(this), this);
         pluginManager.registerEvents(movement, this);
         pluginManager.registerEvents(new CombatListener(this), this);
         pluginManager.registerEvents(new BlockReachListener(this), this);
+        pluginManager.registerEvents(new BuildListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
         pluginManager.registerEvents(enchantGuard, this);
+        pluginManager.registerEvents(chunkGuard, this);
         pluginManager.registerEvents(bans, this);
 
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
@@ -133,12 +140,18 @@ public final class NovaGuardPlugin extends JavaPlugin {
         if (enchantTask != null) {
             enchantTask.cancel();
         }
+        if (chunkTask != null) {
+            chunkTask.cancel();
+        }
         long interval = settings.fingerprintScanTicks;
         fingerprintTask = Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("anti-dupe", dupeListener),
             interval, interval);
         long enchantInterval = settings.enchantScanTicks;
         enchantTask = Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("illegal-enchant", enchantGuard),
             enchantInterval, enchantInterval);
+        long chunkInterval = settings.chunkScanTicks;
+        chunkTask = Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("chunk-guard", chunkGuard),
+            chunkInterval, chunkInterval);
     }
 
     private void decayViolations() {
