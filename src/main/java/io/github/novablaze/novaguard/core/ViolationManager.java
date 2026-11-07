@@ -79,7 +79,7 @@ public final class ViolationManager {
         }
         if (now - data.lastAlertMs[type.ordinal()] >= settings.alertCooldownMs) {
             data.lastAlertMs[type.ordinal()] = now;
-            alert(player.getName(), type, detail, vl, ping);
+            alert(player.getName(), type.displayName(), detail, vl, ping);
             if (settings.alertConsole) {
                 plugin.getLogger().info(line);
             }
@@ -163,17 +163,30 @@ public final class ViolationManager {
         plugin.monitor().recordDupe(playerName);
         String line = playerName + " dupe alert: " + detail;
         log(line);
-        alert(playerName, CheckType.DUPE, detail, -1, -1);
+        alert(playerName, CheckType.DUPE.displayName(), detail, -1, -1);
         if (plugin.settings().alertConsole) {
             plugin.getLogger().warning(line);
         }
     }
 
-    private void alert(String playerName, CheckType type, String detail, double vl, int ping) {
+    /**
+     * An item with illegal enchantments was found and fixed. Logged and shown to staff, but it adds no VL
+     * and never bans: the holder may have been given the item by someone else.
+     */
+    public void illegalItemAlert(String playerName, String detail) {
+        String line = playerName + " illegal enchantment: " + detail;
+        log(line);
+        alert(playerName, "IllegalEnchant", detail, -1, -1);
+        if (plugin.settings().alertConsole) {
+            plugin.getLogger().warning(line);
+        }
+    }
+
+    private void alert(String playerName, String checkName, String detail, double vl, int ping) {
         Component message = Component.text("[NovaGuard] ", NamedTextColor.DARK_AQUA)
             .append(Component.text(playerName, NamedTextColor.WHITE))
             .append(Component.text(" failed ", NamedTextColor.GRAY))
-            .append(Component.text(type.displayName(), NamedTextColor.RED))
+            .append(Component.text(checkName, NamedTextColor.RED))
             .append(Component.text(" (" + detail + ")", NamedTextColor.GRAY));
         if (vl >= 0) {
             message = message.append(Component.text(String.format(Locale.ROOT, " VL %.1f, %dms", vl, ping),

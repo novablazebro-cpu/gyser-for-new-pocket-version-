@@ -47,3 +47,8 @@
 | Human in the loop | A design where the program prepares a risky decision but a person must say yes before it happens. | `ng approve` for IP bans in `ban/BanManager.java` |
 | Log level (SEVERE) | How serious a log line is; Paper shows SEVERE/ERROR lines in red in the console. | The IP-approval red alert |
 | Snapshot | A frozen copy of data at one moment, so later changes do not alter what was approved. | `Approval.ips` / `Approval.alts` |
+| Registry | Minecraft's built-in list of every item, enchantment, block... with its rules (e.g. Sharpness max level 5). | `items/EnchantmentGuard.java` asks it instead of a hand-made table |
+| Pure function | Code that only turns inputs into outputs, touching no server or file, so it can be unit-tested. | `items/EnchantmentRules.judge()` |
+| Separation of concerns | Splitting "deciding" from "doing" into different classes so each is small and testable. | `EnchantmentRules` decides, `EnchantmentGuard` edits items |
+| Data component | A piece of an item's data (enchantments, shulker contents...) in modern Minecraft. | `DataComponentTypes.ENCHANTMENTS` |
+| End-to-end test | Running the real program (here a real Paper server) to check a whole flow, not just one function. | Ban -> red alert -> `ng approve` -> IP in `banned-ips.json` |

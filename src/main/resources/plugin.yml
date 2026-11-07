@@ -17,3 +17,6 @@ permissions:
   novaguard.bypass:
     description: Skips every anti-cheat check (anti-dupe still applies).
     default: false
+  novaguard.enchant.bypass:
+    description: Items of this player are never checked for illegal enchantments (for event staff).
+    default: false

@@ -31,6 +31,19 @@ servers that also run Geyser/Floodgate.
 | MultiTarget | switching between many targets very fast | hit cancelled |
 | AutoClicker | extreme attack speed | extra hits cancelled |
 | AntiDupe | overstacked items, entity-chest dupes, duplicated valuables | trimmed / blocked / alert |
+| IllegalEnchant | Sharpness 6/10, enchantments on the wrong item, conflicting pairs (also in books, shulkers, bundles) | enchantment removed / alert |
+
+### Illegal enchantments
+
+NovaGuard does not use a hand-written list. It asks Minecraft's own enchantment registry what the maximum
+level is, which items an enchantment may go on (the same rule an anvil uses) and which enchantments conflict.
+So Sharpness 6 on a sword, Sharpness on a pickaxe, Protection + Blast Protection on one chestplate and
+Mending + Infinity on one bow are all caught, and new items or datapack enchantments work without an update.
+Items are checked on join, on pickup, when a container is opened or closed, when switching hotbar slot, when
+hitting (the hit is cancelled) and every 30 seconds. Settings are under `illegal-enchantments:` in
+`config.yml` (`over-level: remove | cap | allow`, `max-levels` to allow stronger items on purpose). Staff who
+hand out special items get `novaguard.enchant.bypass`. Finding an illegal item never bans anyone: the holder
+may have been given it.
 
 ## Commands and permissions
 
@@ -40,6 +53,7 @@ servers that also run Geyser/Floodgate.
 | `/novaguard info <player>` | `novaguard.admin` | Ping, Java/Bedrock and current violation levels |
 | `/novaguard exempt <player> <seconds>` | `novaguard.admin` | Skip all checks for a player for a while |
 | `/novaguard reload` | `novaguard.admin` | Reload `config.yml` |
+| (none) | `novaguard.enchant.bypass` | Items of this player are not checked for illegal enchantments |
 
 ### Monitoring a suspect (`/monitor`)
 

@@ -14,6 +14,7 @@ import io.github.novablaze.novaguard.core.PlayerDataManager;
 import io.github.novablaze.novaguard.core.ViolationManager;
 import io.github.novablaze.novaguard.dupe.DupeListener;
 import io.github.novablaze.novaguard.dupe.ItemFingerprints;
+import io.github.novablaze.novaguard.items.EnchantmentGuard;
 import io.github.novablaze.novaguard.monitor.MonitorCommand;
 import io.github.novablaze.novaguard.monitor.MonitorManager;
 import io.github.novablaze.novaguard.movement.Exemptions;
@@ -43,6 +44,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private FlagRateStats flagStats;
     private DupeListener dupeListener;
     private BukkitTask fingerprintTask;
+    private EnchantmentGuard enchantGuard;
+    private BukkitTask enchantTask;
 
     @Override
     public void onEnable() {
@@ -62,12 +65,14 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
         MovementListener movement = new MovementListener(this);
         dupeListener = new DupeListener(this);
+        enchantGuard = new EnchantmentGuard(this);
         PluginManager pluginManager = getServer().getPluginManager();
         pluginManager.registerEvents(new GraceListener(this), this);
         pluginManager.registerEvents(movement, this);
         pluginManager.registerEvents(new CombatListener(this), this);
         pluginManager.registerEvents(new BlockReachListener(this), this);
         pluginManager.registerEvents(dupeListener, this);
+        pluginManager.registerEvents(enchantGuard, this);
         pluginManager.registerEvents(bans, this);
 
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
@@ -76,7 +81,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("monitor", monitor), 1200L, 1200L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("ban-waves", bans), 1200L, 1200L);
         Bukkit.getScheduler().runTaskTimer(this, () -> alts.save(), 6000L, 6000L);
-        scheduleFingerprintScans();
+        scheduleScans();
 
         // Players already online (after /reload or a plugin manager reload).
         long now = System.currentTimeMillis();
@@ -116,16 +121,23 @@ public final class NovaGuardPlugin extends JavaPlugin {
         reloadConfig();
         settings = new Settings(getConfig(), getLogger());
         safety.reset();
-        scheduleFingerprintScans();
+        scheduleScans();
     }
 
-    private void scheduleFingerprintScans() {
+    /** (Re)starts the repeating inventory scans; called again on reload because the intervals may change. */
+    private void scheduleScans() {
         if (fingerprintTask != null) {
             fingerprintTask.cancel();
+        }
+        if (enchantTask != null) {
+            enchantTask.cancel();
         }
         long interval = settings.fingerprintScanTicks;
         fingerprintTask = Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("anti-dupe", dupeListener),
             interval, interval);
+        long enchantInterval = settings.enchantScanTicks;
+        enchantTask = Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("illegal-enchant", enchantGuard),
+            enchantInterval, enchantInterval);
     }
 
     private void decayViolations() {

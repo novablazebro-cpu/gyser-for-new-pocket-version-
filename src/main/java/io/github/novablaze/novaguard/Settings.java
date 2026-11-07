@@ -1,6 +1,8 @@
 package io.github.novablaze.novaguard;
 
+import io.github.novablaze.novaguard.items.EnchantmentRules;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Map;
@@ -106,6 +108,11 @@ public final class Settings {
     public final long fingerprintScanTicks;
     public final Set<Material> fingerprintMaterials;
 
+    public final boolean enchantGuardEnabled;
+    public final long enchantScanTicks;
+    /** The rules for illegal enchantments (levels too high, wrong item, conflicts). */
+    public final EnchantmentRules.Policy enchantPolicy;
+
     public Settings(FileConfiguration c, Logger logger) {
         alertCooldownMs = Math.max(0, c.getLong("alerts.cooldown-ms", 1500));
         alertConsole = c.getBoolean("alerts.console", true);
@@ -210,10 +217,38 @@ public final class Settings {
                 fingerprintMaterials.add(material);
             }
         }
+        enchantGuardEnabled = c.getBoolean("illegal-enchantments.enabled", true);
+        enchantScanTicks = Math.max(5, c.getLong("illegal-enchantments.scan-interval-seconds", 30)) * 20L;
+        enchantPolicy = readEnchantPolicy(c, logger);
+
         ConfigurationSection unused = c.getConfigurationSection("checks");
         if (unused == null) {
             logger.warning("config.yml has no 'checks' section, using defaults.");
         }
+    }
+
+    private static EnchantmentRules.Policy readEnchantPolicy(FileConfiguration c, Logger logger) {
+        String mode = c.getString("illegal-enchantments.over-level", "remove").toLowerCase(Locale.ROOT);
+        EnchantmentRules.OverLevel overLevel = switch (mode) {
+            case "remove" -> EnchantmentRules.OverLevel.REMOVE;
+            case "cap" -> EnchantmentRules.OverLevel.CAP;
+            case "allow" -> null;
+            default -> {
+                logger.warning("illegal-enchantments.over-level must be remove, cap or allow, not '" + mode
+                    + "'. Using remove.");
+                yield EnchantmentRules.OverLevel.REMOVE;
+            }
+        };
+        Map<String, Integer> overrides = new HashMap<>();
+        ConfigurationSection levels = c.getConfigurationSection("illegal-enchantments.max-levels");
+        if (levels != null) {
+            for (String name : levels.getKeys(false)) {
+                String key = name.toLowerCase(Locale.ROOT);
+                overrides.put(key.contains(":") ? key : "minecraft:" + key, Math.max(0, levels.getInt(name)));
+            }
+        }
+        return new EnchantmentRules.Policy(overLevel, c.getBoolean("illegal-enchantments.wrong-item", true),
+            c.getBoolean("illegal-enchantments.conflicts", true), overrides);
     }
 
     public CheckSettings check(CheckType type) {

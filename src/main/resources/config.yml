@@ -238,3 +238,30 @@ anti-dupe:
       - GREEN_SHULKER_BOX
       - RED_SHULKER_BOX
       - BLACK_SHULKER_BOX
+
+illegal-enchantments:
+  # Find and fix enchantments that are impossible in survival. NovaGuard asks Minecraft itself what is legal
+  # (maximum level, which items an enchantment may go on, which enchantments conflict), so this also works
+  # for new items and datapack enchantments without a list to keep up to date.
+  # Checked: on join, when a chest/barrel/shulker is opened or closed, on pickup, when switching hotbar slot,
+  # when hitting (the hit is cancelled) or being hit (armour), and every scan-interval-seconds.
+  # Items inside shulker boxes and bundles are fixed too. Fixes are alerted and written to violations.log.
+  # Staff who hand out special items can be given novaguard.enchant.bypass.
+  enabled: true
+  # Too high a level, e.g. Sharpness 6 or Sharpness 10 (maximum 5):
+  #   remove = take the enchantment off completely
+  #   cap    = lower it to the maximum (Sharpness 10 -> Sharpness 5)
+  #   allow  = do not check levels
+  over-level: remove
+  # Remove enchantments that cannot be on the item at all (Sharpness on a pickaxe, Protection on a sword).
+  wrong-item: true
+  # Remove the weaker of two enchantments that cannot be together (Sharpness + Smite, Mending + Infinity,
+  # Silk Touch + Fortune, Protection + Blast Protection...). On equal levels the choice is always the same.
+  conflicts: true
+  scan-interval-seconds: 30
+  # Raise the maximum for single enchantments if your server gives out stronger items on purpose.
+  # Example:
+  #   max-levels:
+  #     sharpness: 7
+  #     efficiency: 10
+  max-levels: {}

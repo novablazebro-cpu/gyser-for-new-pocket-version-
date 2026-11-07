@@ -6,6 +6,7 @@ import io.github.novablaze.novaguard.Settings;
 import io.github.novablaze.novaguard.core.AltTracker;
 import io.github.novablaze.novaguard.core.BedrockDetector;
 import io.github.novablaze.novaguard.core.PlayerData;
+import io.github.novablaze.novaguard.math.BanDurations;
 import io.github.novablaze.novaguard.math.MonitorVerdict;
 import io.github.novablaze.novaguard.monitor.MonitorManager;
 import io.papermc.paper.ban.BanListType;
@@ -322,7 +323,13 @@ public final class BanManager implements Runnable, Listener {
         approvals.remove(approval.uuid);
         saveApprovals();
         Settings settings = plugin.settings();
-        Duration duration = settings.banDurationDays > 0 ? Duration.ofDays(settings.banDurationDays) : null;
+        if (!Bukkit.getOfflinePlayer(approval.uuid).isBanned()) {
+            // Staff pardoned the account in the meantime: banning their IP and alts now would punish
+            // people for a ban that no longer exists.
+            historyLine("SKIPPED approval by " + admin + " for " + approval.name + ": account is no longer banned");
+            return "nothing: " + approval.name + " is not banned any more (pardoned?), so their IP was left alone";
+        }
+        Duration duration = BanDurations.remaining(approval.requestedMs, settings.banDurationDays, System.currentTimeMillis());
         List<String> done = new ArrayList<>();
         applyIpAndAlts(approval.name, approval.ips, approval.alts, settings.banReason, duration, done);
         String summary = String.join(", ", done);
