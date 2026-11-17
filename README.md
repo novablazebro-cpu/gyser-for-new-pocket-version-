@@ -170,6 +170,40 @@ Safe on any file: the save file is read on a background thread, files over 8 MB,
 lengths and too-deep nesting are refused, and a broken file is listed as `UNREADABLE` instead of stopping the
 scan. Item names cannot add fake lines to the report. The report is renamed to `...-old.txt` at 20 MB.
 
+### Always-on stash scan, categories and report mode
+
+`illegal-items.mode: report` (the default since 1.8.0) **changes nothing**: illegal items stay where they are so
+staff can fly there in spectator and see them. Set `mode: fix` to go back to fixing them on use.
+
+Every chunk that loads (wherever any player goes) and, every `rescan-minutes`, every chunk that stays loaded is
+searched: chests, barrels, shulker boxes, hoppers, furnaces, item frames, armor stands, mobs, items on the
+ground, minecarts, donkeys... plus online survival players' own inventories. Each find is written once to
+`illegal-enchantments-report.txt` and staff get a chat alert with a click-to-teleport button:
+
+```
+[2026-11-17 06:39:12] STASH | chest at world 3 -60 3 | 1 [ILLEGAL ENCHANT], 1 [CREATIVE-ONLY ITEM] | nearest player: herobrine (14 blocks away) (hint, not proof)
+    - slot 4: diamond_sword: [ILLEGAL ENCHANT] Sharpness 10 -> 5
+    - slot 5: barrier x64: [CREATIVE-ONLY ITEM] barrier x64 cannot be obtained in survival
+    * CoreProtect: placed by herobrine on 2026-11-02 14:03
+    * CoreProtect: opened/used by herobrine 12x (last 2026-11-16 21:40)
+    * At the container: /co lookup radius:2 action:container  (who put what in or took it out)
+```
+
+Categories: `[ILLEGAL ENCHANT]`, `[UNBREAKABLE]`, `[ILLEGAL POTION]` (custom effects brewing cannot make),
+`[CREATIVE-ONLY ITEM]` (list in `illegal-items.creative-only`, remove what your shops/crates give out),
+`[OVERSTACKED]`, `[CUSTOM ATTRIBUTES]`. `/ng scanplayers` uses the same categories.
+
+| Command | What it does |
+|---|---|
+| `ng scanhere [radius]` | Scan the loaded chunks around you now (radius in chunks, default 4) and show every find in chat |
+| `ng scanstatus` | Chunk scan progress, CoreProtect on/off, current mode |
+
+Lag-safe: the main thread only copies items that could be illegal (`budget-ms` per tick, paused below
+`min-tps`); checking, CoreProtect lookups and writing run on a background thread. Staff in creative/spectator
+and players with `novaguard.admin` are never reported from their own inventory, and are never named as the
+nearest player. CoreProtect's plugin API tells who **placed** and who **opened** a container, not which items
+went in, so the matching `/co lookup` command is added for you to run at the spot.
+
 ### Ban length and IP bans
 
 Every NovaGuard ban (cheating, duping, illegal items) is longer than the one before: **3 days, then 10 days, then

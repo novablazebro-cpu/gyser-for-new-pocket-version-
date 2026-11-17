@@ -41,15 +41,31 @@ public final class ItemSanitizer {
 
     private final NovaGuardPlugin plugin;
     /** Item types that could not be fixed (warned once each). */
-    private final Set<String> warnedUnstable = new HashSet<>();
+    private final Set<String> warnedUnstable = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public ItemSanitizer(NovaGuardPlugin plugin) {
         this.plugin = plugin;
     }
 
+    /**
+     * The live fixer: fixes nothing when illegal-items.enabled is false or illegal-items.mode is report
+     * (then illegal items stay where they are, for staff to see, and the evidence scans report them).
+     */
     public Result sanitize(ItemStack item) {
         Settings settings = plugin.settings();
-        if (!settings.illegalEnabled || item == null || item.isEmpty()) {
+        if (!settings.illegalEnabled || settings.illegalReportOnly) {
+            return new Result(item, List.of(), false);
+        }
+        return sanitizeAlways(item);
+    }
+
+    /**
+     * What fixing would change, whatever the mode (for the evidence scans, the self-test and an explicit
+     * /cleanallexploits). Returns a fixed copy; the item itself is never changed.
+     */
+    public Result sanitizeAlways(ItemStack item) {
+        Settings settings = plugin.settings();
+        if (item == null || item.isEmpty()) {
             return new Result(item, List.of(), false);
         }
         Result result = sanitize(item, 0, settings);

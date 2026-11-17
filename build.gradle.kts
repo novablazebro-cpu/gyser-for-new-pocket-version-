@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "io.github.novablaze"
-version = "1.7.0"
+version = "1.8.0"
 
 repositories {
     mavenCentral()

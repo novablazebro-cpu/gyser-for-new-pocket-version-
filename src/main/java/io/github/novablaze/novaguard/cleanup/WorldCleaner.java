@@ -150,8 +150,9 @@ public final class WorldCleaner implements Listener, Runnable {
         if (job != null) {
             return "A cleanup is already running: " + status();
         }
-        if (!plugin.settings().illegalEnabled) {
-            return "illegal-items.enabled is false in config.yml: nothing would be fixed. Turn it on first.";
+        if (apply && (!plugin.settings().illegalEnabled || plugin.settings().illegalReportOnly)) {
+            return "illegal-items.mode is report (or illegal-items.enabled is false) in config.yml: illegal items are"
+                + " only reported, never fixed. Set mode: fix and run /ng reload to clean for real. Preview still works.";
         }
         long epoch = System.currentTimeMillis();
         if (apply) {
@@ -424,7 +425,7 @@ public final class WorldCleaner implements Listener, Runnable {
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
             if (busy.contains(slot)) {
-                if (item != null && !item.isEmpty() && plugin.fingerprints().sanitizer().sanitize(item).changed()) {
+                if (item != null && !item.isEmpty() && plugin.fingerprints().sanitizer().sanitizeAlways(item).changed()) {
                     skipped++;
                 }
                 continue;
@@ -449,7 +450,7 @@ public final class WorldCleaner implements Listener, Runnable {
         if (item == null || item.isEmpty()) {
             return null;
         }
-        ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitize(item);
+        ItemSanitizer.Result result = plugin.fingerprints().sanitizer().sanitizeAlways(item);
         if (!result.changed()) {
             return null;
         }

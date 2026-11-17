@@ -53,3 +53,8 @@
 | Backpressure | Making a fast producer wait when the consumer falls behind, so memory cannot overflow. | The 64-slot queue between the file reader and the main thread in `PlayerScanner` |
 | Log injection | Faking extra lines in a log or report by hiding line breaks inside text (an item name). | `ReportFile.clean()` |
 | Read-only | Code that only looks at data and can never change it. | `/ng scanplayers` never writes to a save file |
+| Main thread | The one thread where Minecraft runs the game world; only it may read or change blocks and chests. | Why `ChunkScanner` copies items on the main thread and checks them elsewhere |
+| Thread pool / background thread | Extra lines of work on other CPU cores, for jobs that do not touch the world. | `NovaGuard-evidence-scan` thread in `ChunkScanner` |
+| Reflection | Calling another program's code by looking up its methods by name while running, so it is not needed to build. | `CoreProtectEvidence` uses CoreProtect without depending on it |
+| Deduplication | Remembering what was already reported so the same thing is not reported again. | The `reported` map in `ChunkScanner` |
+| Report-only mode | Detect and record, but never act, so evidence stays in place. | `illegal-items.mode: report` |

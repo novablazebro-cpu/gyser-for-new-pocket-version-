@@ -140,6 +140,19 @@ public final class Settings {
     public final long wealthThreshold;
 
     public final boolean illegalEnabled;
+    /** illegal-items.mode: report = find and report illegal items, never change them. */
+    public final boolean illegalReportOnly;
+    /** illegal-items.creative-only: item types that cannot be obtained in survival ("*_SPAWN_EGG" allowed). */
+    public final java.util.Set<org.bukkit.Material> creativeOnly;
+    public final boolean chunkScanEnabled;
+    public final long chunkRescanMs;
+    public final long chunkScanBudgetNanos;
+    public final double chunkScanMinTps;
+    public final boolean chunkScanAlerts;
+    public final long chunkScanAlertCooldownMs;
+    public final int chunkScanNearestRadius;
+    public final boolean coreProtectEvidence;
+    public final int coreProtectDays;
     public final boolean illegalRemoveUnbreakable;
     public final boolean illegalRemoveAttributes;
     public final boolean illegalSkipPluginItems;
@@ -320,6 +333,37 @@ public final class Settings {
         wealthThreshold = Math.max(1, c.getLong("wealth-alerts.threshold", 576));
 
         illegalEnabled = c.getBoolean("illegal-items.enabled", true);
+        illegalReportOnly = "report".equalsIgnoreCase(c.getString("illegal-items.mode", "fix"));
+        java.util.Set<org.bukkit.Material> creative = java.util.EnumSet.noneOf(org.bukkit.Material.class);
+        for (String name : c.getStringList("illegal-items.creative-only")) {
+            String upper = name.trim().toUpperCase(java.util.Locale.ROOT);
+            if (upper.startsWith("*")) {
+                String suffix = upper.substring(1);
+                for (org.bukkit.Material material : org.bukkit.Material.values()) {
+                    if (!material.isLegacy() && material.name().endsWith(suffix)) {
+                        creative.add(material);
+                    }
+                }
+                continue;
+            }
+            org.bukkit.Material material = org.bukkit.Material.matchMaterial(upper);
+            if (material == null) {
+                logger.info("illegal-items.creative-only: '" + name + "' is not an item on this server version, skipped.");
+            } else {
+                creative.add(material);
+            }
+        }
+        creativeOnly = java.util.Collections.unmodifiableSet(creative);
+        chunkScanEnabled = c.getBoolean("evidence.chunk-scan.enabled", true);
+        chunkRescanMs = Math.max(1, c.getLong("evidence.chunk-scan.rescan-minutes", 10)) * 60_000L;
+        chunkScanBudgetNanos = (long) (Math.max(0.2, Math.min(10.0, c.getDouble("evidence.chunk-scan.budget-ms", 2.0)))
+            * 1_000_000L);
+        chunkScanMinTps = c.getDouble("evidence.chunk-scan.min-tps", 19.0);
+        chunkScanAlerts = c.getBoolean("evidence.chunk-scan.staff-alerts", true);
+        chunkScanAlertCooldownMs = Math.max(0, c.getLong("evidence.chunk-scan.alert-cooldown-minutes", 60)) * 60_000L;
+        chunkScanNearestRadius = Math.max(0, c.getInt("evidence.chunk-scan.nearest-player-radius", 128));
+        coreProtectEvidence = c.getBoolean("evidence.coreprotect.enabled", true);
+        coreProtectDays = Math.max(1, Math.min(3650, c.getInt("evidence.coreprotect.days", 30)));
         illegalRemoveUnbreakable = c.getBoolean("illegal-items.remove-unbreakable", true);
         illegalRemoveAttributes = c.getBoolean("illegal-items.remove-custom-attributes", false);
         illegalSkipPluginItems = c.getBoolean("illegal-items.skip-plugin-items", true);

@@ -329,6 +329,47 @@ wealth-alerts:
     EMERALD_BLOCK: 1
 
 illegal-items:
+  # fix    = illegal items are fixed the moment they are used (picked up, opened, in an inventory).
+  # report = nothing is ever changed: illegal items stay where they are, so staff can go and look, and the
+  #          evidence scans (/ng scanplayers, the chunk scan) report them. /cleanallexploits confirm is refused.
+  mode: report
+  # Items that cannot be obtained in survival. Reported as [CREATIVE-ONLY ITEM], never removed.
+  # "*_SPAWN_EGG" means every item whose name ends with _SPAWN_EGG. Remove anything your shops, crates or
+  # kits give out, or players who bought it will be reported. Unknown names are skipped (logged once).
+  creative-only:
+    - BEDROCK
+    - BARRIER
+    - LIGHT
+    - STRUCTURE_VOID
+    - STRUCTURE_BLOCK
+    - JIGSAW
+    - COMMAND_BLOCK
+    - CHAIN_COMMAND_BLOCK
+    - REPEATING_COMMAND_BLOCK
+    - COMMAND_BLOCK_MINECART
+    - DEBUG_STICK
+    - END_PORTAL_FRAME
+    - SPAWNER
+    - TRIAL_SPAWNER
+    - VAULT
+    - REINFORCED_DEEPSLATE
+    - BUDDING_AMETHYST
+    - PETRIFIED_OAK_SLAB
+    - KNOWLEDGE_BOOK
+    - FARMLAND
+    - DIRT_PATH
+    - CHORUS_PLANT
+    - FROGSPAWN
+    - INFESTED_STONE
+    - INFESTED_COBBLESTONE
+    - INFESTED_STONE_BRICKS
+    - INFESTED_MOSSY_STONE_BRICKS
+    - INFESTED_CRACKED_STONE_BRICKS
+    - INFESTED_CHISELED_STONE_BRICKS
+    - INFESTED_DEEPSLATE
+    - TEST_BLOCK
+    - TEST_INSTANCE_BLOCK
+    - "*_SPAWN_EGG"
   # Fixes items that are impossible in survival: enchantments above their maximum level (Sharpness 10),
   # enchantments that exclude each other (Density + Breach), enchantments on items that cannot have them
   # (Knockback on a stick). The rules come from the server itself, so they always match vanilla exactly.
@@ -346,3 +387,25 @@ illegal-items:
   # A warning is only given when a checked, legal item became illegal in the player's own inventory.
   suspect: true
   fixed-message: "<yellow>An item had enchantments that are impossible in survival and was fixed: <changes></yellow>"
+
+evidence:
+  # Always-on search for illegal items in every chunk that loads (wherever a player goes) and, every few minutes,
+  # in every chunk that stays loaded, plus online players' inventories. Nothing is changed. Finds go to
+  # plugins/NovaGuard/illegal-enchantments-report.txt with exact coordinates; staff get a clickable alert.
+  chunk-scan:
+    enabled: true
+    # A loaded chunk is searched again after this many minutes (catches items put in later).
+    rescan-minutes: 10
+    # Main-thread time per tick for copying items (the checking itself runs on another CPU core).
+    budget-ms: 2.0
+    # Below this TPS the scan waits, so it never adds to lag.
+    min-tps: 19.0
+    staff-alerts: true
+    # The same container alerts staff at most once per this many minutes (it is reported once anyway).
+    alert-cooldown-minutes: 60
+    # The nearest player in survival/adventure within this many blocks is noted as a hint (0 = off).
+    nearest-player-radius: 128
+  coreprotect:
+    # If CoreProtect is installed: who placed and who opened each container with illegal items.
+    enabled: true
+    days: 30

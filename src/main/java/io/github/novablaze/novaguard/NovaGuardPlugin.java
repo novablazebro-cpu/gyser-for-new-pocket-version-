@@ -55,6 +55,9 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private WorldCleaner cleaner;
     private CleanCommand cleanCommand;
     private io.github.novablaze.novaguard.evidence.PlayerScanner playerScanner;
+    private io.github.novablaze.novaguard.evidence.IllegalItemInspector inspector;
+    private io.github.novablaze.novaguard.evidence.ChunkScanner chunkScanner;
+    private io.github.novablaze.novaguard.evidence.ReportFile evidenceReport;
     private FlagRateStats flagStats;
     private final MobTracker mobs = new MobTracker();
     private DupeListener dupeListener;
@@ -83,7 +86,11 @@ public final class NovaGuardPlugin extends JavaPlugin {
         wealth = new WealthAlerts(this);
         cleaner = new WorldCleaner(this);
         cleanCommand = new CleanCommand(this);
-        playerScanner = new io.github.novablaze.novaguard.evidence.PlayerScanner(this);
+        evidenceReport = new io.github.novablaze.novaguard.evidence.ReportFile(getDataFolder().toPath(),
+            getLogger()::warning);
+        inspector = new io.github.novablaze.novaguard.evidence.IllegalItemInspector(this);
+        playerScanner = new io.github.novablaze.novaguard.evidence.PlayerScanner(this, evidenceReport);
+        chunkScanner = new io.github.novablaze.novaguard.evidence.ChunkScanner(this, inspector, evidenceReport);
         bans = new BanManager(this);
 
         MovementListener movement = new MovementListener(this);
@@ -97,6 +104,8 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(dupeListener, this);
         pluginManager.registerEvents(bans, this);
         pluginManager.registerEvents(cleaner, this);
+        pluginManager.registerEvents(chunkScanner, this);
+        chunkScanner.start();
 
         // After every plugin is enabled (login plugins may load after NovaGuard).
         Bukkit.getScheduler().runTask(this, () -> safety.run("login-plugins", login::detect));
@@ -137,6 +146,12 @@ public final class NovaGuardPlugin extends JavaPlugin {
     public void onDisable() {
         if (playerScanner != null) {
             playerScanner.shutdown();
+        }
+        if (chunkScanner != null) {
+            chunkScanner.shutdown();
+        }
+        if (evidenceReport != null) {
+            evidenceReport.shutdown();
         }
         if (monitor != null) {
             monitor.shutdown();
@@ -292,5 +307,13 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public io.github.novablaze.novaguard.evidence.PlayerScanner playerScanner() {
         return playerScanner;
+    }
+
+    public io.github.novablaze.novaguard.evidence.IllegalItemInspector inspector() {
+        return inspector;
+    }
+
+    public io.github.novablaze.novaguard.evidence.ChunkScanner chunkScanner() {
+        return chunkScanner;
     }
 }

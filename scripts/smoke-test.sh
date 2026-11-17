@@ -51,6 +51,7 @@ echo "novaguard unban nobody" >&3
 echo "cleanallexploits" >&3
 echo "cleanallexploits preview" >&3
 echo "novaguard scanplayers" >&3
+echo "novaguard scanstatus" >&3
 sleep 5
 echo "stop" >&3
 wait "$SERVER_PID" || true
@@ -69,6 +70,7 @@ grep -q "nobody has never joined\." server.log || { echo "ERROR: /novaguard dupe
 grep -q "Nobody is on the suspect list" server.log || { echo "ERROR: /novaguard review did not answer"; FAIL=1; }
 grep -q "No item with an ID starting with" server.log || { echo "ERROR: /novaguard item did not answer"; FAIL=1; }
 grep -q "Cleanup preview finished" server.log || { echo "ERROR: /cleanallexploits preview did not finish"; FAIL=1; }
+grep -q "Chunk scan: on" server.log || { echo "ERROR: /novaguard scanstatus did not answer"; FAIL=1; }
 grep -q "Player scan finished" server.log || { echo "ERROR: /novaguard scanplayers did not finish"; FAIL=1; }
 grep -q "TEST MODE" server.log || { echo "ERROR: the test-mode reminder is missing"; FAIL=1; }
 # The self-test fixes illegal items and undoes dupes on test items inside the real server.

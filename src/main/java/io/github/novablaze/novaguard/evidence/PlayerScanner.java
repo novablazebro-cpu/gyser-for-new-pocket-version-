@@ -1,7 +1,7 @@
 package io.github.novablaze.novaguard.evidence;
 
 import io.github.novablaze.novaguard.NovaGuardPlugin;
-import io.github.novablaze.novaguard.items.ItemSanitizer;
+import io.github.novablaze.novaguard.evidence.IllegalItemInspector.Finding;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -24,14 +24,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitTask;
 
 /**
@@ -51,10 +49,6 @@ public final class PlayerScanner {
         Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.dat$");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         .withZone(ZoneId.systemDefault());
-
-    /** One illegal item found: where it is, what it is, what is illegal about it. */
-    public record Finding(String where, String item, List<String> illegal) {
-    }
 
     private final class Job {
         final CommandSender sender;
@@ -88,9 +82,9 @@ public final class PlayerScanner {
     private Job job;
     private BukkitTask task;
 
-    public PlayerScanner(NovaGuardPlugin plugin) {
+    public PlayerScanner(NovaGuardPlugin plugin, ReportFile report) {
         this.plugin = plugin;
-        this.report = new ReportFile(plugin.getDataFolder().toPath(), plugin.getLogger()::warning);
+        this.report = report;
     }
 
     public ReportFile report() {
@@ -118,11 +112,6 @@ public final class PlayerScanner {
         }
         if (job != null) {
             reply(sender, "A player scan is already running (/ng scanplayers status | cancel).", NamedTextColor.YELLOW);
-            return;
-        }
-        if (!plugin.settings().illegalEnabled) {
-            reply(sender, "illegal-items.enabled is false in config.yml, so nothing would count as illegal."
-                + " Turn it on first.", NamedTextColor.RED);
             return;
         }
         UUID only = null;
@@ -245,7 +234,7 @@ public final class PlayerScanner {
         List<Finding> findings = new ArrayList<>();
         for (PlayerFileItems.FileItem fileItem : parsed.items()) {
             try {
-                Finding finding = check(plugin.fingerprints().sanitizer(), fileItem.where(),
+                Finding finding = plugin.inspector().inspect(fileItem.where(),
                     ItemStack.deserializeBytes(fileItem.paperBytes()));
                 if (finding != null) {
                     findings.add(finding);
@@ -266,7 +255,7 @@ public final class PlayerScanner {
 
     private void scanOnline(Job current, Player player) {
         List<Finding> findings = new ArrayList<>();
-        ItemSanitizer sanitizer = plugin.fingerprints().sanitizer();
+        IllegalItemInspector sanitizer = plugin.inspector();
         ItemStack[] inventory = player.getInventory().getContents();
         for (int slot = 0; slot < inventory.length; slot++) {
             addIfIllegal(findings, sanitizer, "inventory slot " + slot, inventory[slot]);
@@ -283,34 +272,26 @@ public final class PlayerScanner {
         }
     }
 
-    private static void addIfIllegal(List<Finding> findings, ItemSanitizer sanitizer, String where, ItemStack item) {
-        Finding finding = check(sanitizer, where, item);
+    private static void addIfIllegal(List<Finding> findings, IllegalItemInspector inspector, String where,
+                                     ItemStack item) {
+        Finding finding = inspector.inspect(where, item);
         if (finding != null) {
             findings.add(finding);
         }
-    }
-
-    /** @return what is illegal about the item, or null when it is legal. Never changes the item. */
-    public static Finding check(ItemSanitizer sanitizer, String where, ItemStack item) {
-        if (item == null || item.isEmpty()) {
-            return null;
-        }
-        ItemSanitizer.Result result = sanitizer.sanitize(item);
-        return result.changed() ? new Finding(where, describe(item), result.changes()) : null;
     }
 
     private void write(Job current, String name, UUID uuid, String kind, String where, List<Finding> findings) {
         current.playersWithItems++;
         current.itemsFound += findings.size();
         List<String> lines = new ArrayList<>();
-        lines.add(kind + " | " + ReportFile.clean(name == null ? "?" : name) + " (" + uuid + ") | "
-            + ReportFile.clean(where));
+        String summary = IllegalItemInspector.summary(findings);
+        lines.add(kind + " | " + ReportFile.clean(name == null ? "?" : name) + " (" + uuid + ") | " + summary
+            + " | " + ReportFile.clean(where));
         for (Finding finding : findings) {
-            lines.add("    - " + ReportFile.clean(finding.where() + ": " + finding.item() + ": "
-                + String.join(", ", finding.illegal())));
+            lines.add("    - " + ReportFile.clean(finding.line()));
         }
         report.append(lines);
-        current.chat.add((name == null ? uuid.toString() : name) + ": " + findings.size() + " illegal item(s)");
+        current.chat.add((name == null ? uuid.toString() : name) + ": " + summary);
     }
 
     private void finish(Job current) {
@@ -361,7 +342,6 @@ public final class PlayerScanner {
         }
         stopTask();
         reader.shutdownNow();
-        report.shutdown();
     }
 
     // ---------------------------------------------------------------- helpers
@@ -384,21 +364,6 @@ public final class PlayerScanner {
             }
         }
         return null;
-    }
-
-    static String describe(ItemStack item) {
-        StringBuilder text = new StringBuilder(item.getType().name().toLowerCase(Locale.ROOT));
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null && meta.hasDisplayName()) {
-            Component name = meta.displayName();
-            if (name != null) {
-                text.append(" \"").append(PlainTextComponentSerializer.plainText().serialize(name)).append('"');
-            }
-        }
-        if (item.getAmount() > 1) {
-            text.append(" x").append(item.getAmount());
-        }
-        return text.toString();
     }
 
     private static String place(Location location) {

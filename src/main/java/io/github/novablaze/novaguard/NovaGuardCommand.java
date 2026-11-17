@@ -19,7 +19,7 @@ public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
         List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
-            "dupe", "item", "unban", "review", "cleanall", "scanplayers", "selftest");
+            "dupe", "item", "unban", "review", "cleanall", "scanplayers", "scanhere", "scanstatus", "selftest");
 
     private final NovaGuardPlugin plugin;
     private final ItemCommands items;
@@ -106,6 +106,19 @@ public final class NovaGuardCommand implements BasicCommand {
                     plugin.playerScanner().command(sender, args);
                 }
             }
+            case "scanhere" -> {
+                if (requireAdmin(sender)) {
+                    plugin.chunkScanner().scanHere(sender, args);
+                }
+            }
+            case "scanstatus" -> {
+                if (requireAdmin(sender)) {
+                    reply(sender, plugin.chunkScanner().status(), NamedTextColor.AQUA);
+                    reply(sender, plugin.settings().illegalReportOnly
+                        ? "illegal-items.mode: report (illegal items are only reported, never removed)."
+                        : "illegal-items.mode: fix (illegal items are fixed when they are used).", NamedTextColor.AQUA);
+                }
+            }
             case "selftest" -> {
                 if (requireAdmin(sender)) {
                     items.selftest(sender);
@@ -120,7 +133,7 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
                 + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest"
-                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | scanplayers [player|status|cancel] | selftest>",
+                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | scanplayers [player|status|cancel] | scanhere [radius] | scanstatus | selftest>",
                 NamedTextColor.YELLOW);
         }
     }

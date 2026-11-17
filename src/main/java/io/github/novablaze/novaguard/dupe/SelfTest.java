@@ -66,11 +66,16 @@ final class SelfTest {
         check("Staff copies (creative clones) are kept and get new IDs instead of being removed", this::staffKeep);
         check("Creative clones lose their hidden ID (also inside shulkers)", this::stripIds);
         check("Unban really lifts an account ban and an IP ban (fake test account)", this::unbanWorks);
-        if (plugin.settings().illegalEnabled) {
+        if (plugin.settings().illegalEnabled && !plugin.settings().illegalReportOnly) {
             check("/cleanallexploits: preview changes nothing, confirm fixes only the illegal item", this::cleanup);
-            check("/ng scanplayers: an illegal sword in an offline player's save file is found, nothing is changed",
-                this::offlineFile);
+        } else {
+            lines.add("illegal-items.mode is report: the /cleanallexploits confirm case is skipped.");
         }
+        check("/ng scanplayers: an illegal sword in an offline player's save file is found, nothing is changed",
+            this::offlineFile);
+        check("Evidence categories: enchant, unbreakable, potion, creative-only and overstacked items are told apart",
+            this::categories);
+        check("Report mode: the live fixer leaves an illegal sword unchanged", this::reportModeKeeps);
         lines.add(failures == 0 ? "Self-test passed (" + lines.size() + " cases)."
             : "Self-test FAILED: " + failures + " case(s). Please report the lines above.");
     }
@@ -99,7 +104,7 @@ final class SelfTest {
     private String sharpness() {
         ItemStack sword = ItemStack.of(Material.NETHERITE_SWORD);
         sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
-        ItemStack fixed = sanitizer.sanitize(sword).item();
+        ItemStack fixed = sanitizer.sanitizeAlways(sword).item();
         int level = fixed.getEnchantmentLevel(Enchantment.SHARPNESS);
         return level == Enchantment.SHARPNESS.getMaxLevel() ? null : "level is " + level;
     }
@@ -108,7 +113,7 @@ final class SelfTest {
         ItemStack mace = ItemStack.of(Material.MACE);
         mace.addUnsafeEnchantment(Enchantment.BREACH, Enchantment.BREACH.getMaxLevel());
         mace.addUnsafeEnchantment(Enchantment.WIND_BURST, Enchantment.WIND_BURST.getMaxLevel());
-        ItemSanitizer.Result result = sanitizer.sanitize(mace);
+        ItemSanitizer.Result result = sanitizer.sanitizeAlways(mace);
         return result.changed() ? "it was changed: " + result.changes() : null;
     }
 
@@ -116,7 +121,7 @@ final class SelfTest {
         ItemStack mace = ItemStack.of(Material.MACE);
         mace.addUnsafeEnchantment(Enchantment.DENSITY, 5);
         mace.addUnsafeEnchantment(Enchantment.BREACH, 4);
-        ItemStack fixed = sanitizer.sanitize(mace).item();
+        ItemStack fixed = sanitizer.sanitizeAlways(mace).item();
         boolean density = fixed.getEnchantmentLevel(Enchantment.DENSITY) > 0;
         boolean breach = fixed.getEnchantmentLevel(Enchantment.BREACH) > 0;
         return density != breach ? null : "density=" + density + " breach=" + breach;
@@ -125,7 +130,7 @@ final class SelfTest {
     private String knockbackStick() {
         ItemStack stick = ItemStack.of(Material.STICK);
         stick.addUnsafeEnchantment(Enchantment.KNOCKBACK, 1000);
-        ItemStack fixed = sanitizer.sanitize(stick).item();
+        ItemStack fixed = sanitizer.sanitizeAlways(stick).item();
         return fixed.getEnchantments().isEmpty() ? null : "still has " + fixed.getEnchantments();
     }
 
@@ -134,7 +139,7 @@ final class SelfTest {
         EnchantmentStorageMeta meta = (EnchantmentStorageMeta) book.getItemMeta();
         meta.addStoredEnchant(Enchantment.SHARPNESS, 10, true);
         book.setItemMeta(meta);
-        ItemStack fixed = sanitizer.sanitize(book).item();
+        ItemStack fixed = sanitizer.sanitizeAlways(book).item();
         int level = ((EnchantmentStorageMeta) fixed.getItemMeta()).getStoredEnchantLevel(Enchantment.SHARPNESS);
         return level == Enchantment.SHARPNESS.getMaxLevel() ? null : "level is " + level;
     }
@@ -143,7 +148,7 @@ final class SelfTest {
         ItemStack sword = ItemStack.of(Material.DIAMOND_SWORD);
         sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
         ItemStack box = shulker(List.of(ItemStack.empty(), sword));
-        ItemStack fixed = sanitizer.sanitize(box).item();
+        ItemStack fixed = sanitizer.sanitizeAlways(box).item();
         List<ItemStack> inside = ItemTree.children(fixed);
         if (inside == null || inside.size() < 2) {
             return "contents lost: " + inside;
@@ -323,10 +328,10 @@ final class SelfTest {
             if (items.size() != 2) {
                 return "expected 2 items with data (sword, pickaxe), found " + items.size();
             }
-            List<io.github.novablaze.novaguard.evidence.PlayerScanner.Finding> found = new ArrayList<>();
+            List<io.github.novablaze.novaguard.evidence.IllegalItemInspector.Finding> found = new ArrayList<>();
             for (var item : items) {
                 ItemStack loaded = ItemStack.deserializeBytes(item.paperBytes());
-                var finding = io.github.novablaze.novaguard.evidence.PlayerScanner.check(sanitizer, item.where(), loaded);
+                var finding = plugin.inspector().inspect(item.where(), loaded);
                 if (finding != null) {
                     found.add(finding);
                 }
@@ -345,6 +350,69 @@ final class SelfTest {
         } catch (java.io.IOException e) {
             return "could not build the test file: " + e;
         }
+    }
+
+    private String categories() {
+        var inspector = plugin.inspector();
+        ItemStack sword = ItemStack.of(Material.DIAMOND_SWORD);
+        sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
+        ItemStack unbreakable = ItemStack.of(Material.IRON_PICKAXE);
+        unbreakable.editMeta(meta -> meta.setUnbreakable(true));
+        ItemStack potion = ItemStack.of(Material.POTION);
+        potion.setData(DataComponentTypes.POTION_CONTENTS, io.papermc.paper.datacomponent.item.PotionContents
+            .potionContents().addCustomEffect(new org.bukkit.potion.PotionEffect(
+                org.bukkit.potion.PotionEffectType.STRENGTH, 20 * 600, 254)).build());
+        ItemStack barrier = ItemStack.of(Material.BARRIER, 64);
+        ItemStack totems = ItemStack.of(Material.TOTEM_OF_UNDYING);
+        totems.setAmount(64);
+        ItemStack legal = ItemStack.of(Material.DIAMOND_PICKAXE);
+        legal.addEnchantment(Enchantment.EFFICIENCY, 5);
+        ItemStack normalPotion = ItemStack.of(Material.POTION);
+        normalPotion.setData(DataComponentTypes.POTION_CONTENTS, io.papermc.paper.datacomponent.item.PotionContents
+            .potionContents().potion(org.bukkit.potion.PotionType.STRONG_STRENGTH).build());
+        String problem = expect(inspector, sword, "ILLEGAL ENCHANT");
+        if (problem == null) {
+            problem = expect(inspector, unbreakable, "UNBREAKABLE");
+        }
+        if (problem == null) {
+            problem = expect(inspector, potion, "ILLEGAL POTION");
+        }
+        if (problem == null && plugin.settings().creativeOnly.contains(Material.BARRIER)) {
+            problem = expect(inspector, barrier, "CREATIVE-ONLY ITEM");
+        }
+        if (problem == null && totems.getAmount() > totems.getMaxStackSize()) {
+            problem = expect(inspector, totems, "OVERSTACKED");
+        }
+        if (problem == null && inspector.inspect("test", legal) != null) {
+            problem = "a legal Efficiency 5 pickaxe was reported";
+        }
+        if (problem == null && inspector.inspect("test", normalPotion) != null) {
+            problem = "a normal brewed Strength II potion was reported";
+        }
+        if (problem == null && sword.getEnchantmentLevel(Enchantment.SHARPNESS) != 10) {
+            problem = "checking changed the sword";
+        }
+        return problem;
+    }
+
+    private static String expect(io.github.novablaze.novaguard.evidence.IllegalItemInspector inspector,
+                                 ItemStack item, String label) {
+        var finding = inspector.inspect("test", item);
+        if (finding == null) {
+            return item.getType() + " was not reported";
+        }
+        return finding.line().contains("[" + label + "]") ? null : item.getType() + " got " + finding.line();
+    }
+
+    private String reportModeKeeps() {
+        if (!plugin.settings().illegalReportOnly) {
+            return null; // mode: fix on this server: nothing to check.
+        }
+        ItemStack sword = ItemStack.of(Material.DIAMOND_SWORD);
+        sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
+        ItemSanitizer.Result result = sanitizer.sanitize(sword);
+        return !result.changed() && result.item().getEnchantmentLevel(Enchantment.SHARPNESS) == 10 ? null
+            : "the live fixer changed the sword in report mode";
     }
 
     private static java.util.Map<String, Object> asFileItem(ItemStack item, int slot) throws java.io.IOException {
