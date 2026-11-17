@@ -47,3 +47,9 @@
 | Human in the loop | A design where the program prepares a risky decision but a person must say yes before it happens. | `ng approve` for IP bans in `ban/BanManager.java` |
 | Log level (SEVERE) | How serious a log line is; Paper shows SEVERE/ERROR lines in red in the console. | The IP-approval red alert |
 | Snapshot | A frozen copy of data at one moment, so later changes do not alter what was approved. | `Approval.ips` / `Approval.alts` |
+| NBT (Named Binary Tag) | Minecraft's file format for saved data: a tree of named values packed into bytes. | `evidence/Nbt.java` reads player save files |
+| Zip bomb | A tiny packed file that unpacks into gigabytes to crash whoever opens it. | The size cap in `Nbt.readCompressed()` |
+| Serialization | Turning an object into bytes to store or send it (deserialization: bytes back into an object). | `ItemStack.deserializeBytes` in `/ng scanplayers` |
+| Backpressure | Making a fast producer wait when the consumer falls behind, so memory cannot overflow. | The 64-slot queue between the file reader and the main thread in `PlayerScanner` |
+| Log injection | Faking extra lines in a log or report by hiding line breaks inside text (an item name). | `ReportFile.clean()` |
+| Read-only | Code that only looks at data and can never change it. | `/ng scanplayers` never writes to a save file |

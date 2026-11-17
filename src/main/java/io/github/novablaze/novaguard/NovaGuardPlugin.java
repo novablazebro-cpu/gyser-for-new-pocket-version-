@@ -54,6 +54,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private WealthAlerts wealth;
     private WorldCleaner cleaner;
     private CleanCommand cleanCommand;
+    private io.github.novablaze.novaguard.evidence.PlayerScanner playerScanner;
     private FlagRateStats flagStats;
     private final MobTracker mobs = new MobTracker();
     private DupeListener dupeListener;
@@ -82,6 +83,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
         wealth = new WealthAlerts(this);
         cleaner = new WorldCleaner(this);
         cleanCommand = new CleanCommand(this);
+        playerScanner = new io.github.novablaze.novaguard.evidence.PlayerScanner(this);
         bans = new BanManager(this);
 
         MovementListener movement = new MovementListener(this);
@@ -133,6 +135,9 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (playerScanner != null) {
+            playerScanner.shutdown();
+        }
         if (monitor != null) {
             monitor.shutdown();
         }
@@ -283,5 +288,9 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public ItemFingerprints fingerprints() {
         return fingerprints;
+    }
+
+    public io.github.novablaze.novaguard.evidence.PlayerScanner playerScanner() {
+        return playerScanner;
     }
 }

@@ -144,6 +144,32 @@ moment they join. It runs 2 ms per tick, so there is no lag even on big worlds, 
 
 Also available as `ng cleanall ...`. Needs `novaguard.admin`. Design: `docs/adr/ADR-001-clean-all-exploits.md`.
 
+### Evidence: who has illegal items, also players who left: `/ng scanplayers`
+
+Reads the **save file of every player who ever joined** (inventory, armor, off hand, ender chest, and what is
+inside shulker boxes and bundles there) and writes every illegal item to
+`plugins/NovaGuard/illegal-enchantments-report.txt`, with the player's last position, respawn point and last
+death. Players online right now are checked live. It **only reads**: no file and no item is changed, nobody is
+warned or banned. Same rules as the illegal-item fixer (vanilla limits, plugin items skipped).
+
+| Command | What it does |
+|---|---|
+| `ng scanplayers` | Every player who ever joined |
+| `ng scanplayers <player>` | One player |
+| `ng scanplayers status` / `cancel` | Progress / stop early |
+
+A report entry looks like this (`PROOF` = the item is in that player's own inventory or ender chest):
+
+```
+PROOF (offline, file saved 2026-11-17 05:20:04) | herobrine (uuid) | last position world 120 64 -340 | respawn point world 118 64 -338 | last death unknown
+    - inventory slot 3 (hotbar): diamond_sword "Excalibur": minecraft:sharpness 10 -> 5
+    - ender chest slot 12: shulker_box: minecraft:sharpness 7 -> 5 (inside shulker_box)
+```
+
+Safe on any file: the save file is read on a background thread, files over 8 MB, packed "zip bombs", impossible
+lengths and too-deep nesting are refused, and a broken file is listed as `UNREADABLE` instead of stopping the
+scan. Item names cannot add fake lines to the report. The report is renamed to `...-old.txt` at 20 MB.
+
 ### Ban length and IP bans
 
 Every NovaGuard ban (cheating, duping, illegal items) is longer than the one before: **3 days, then 10 days, then

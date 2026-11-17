@@ -68,6 +68,8 @@ final class SelfTest {
         check("Unban really lifts an account ban and an IP ban (fake test account)", this::unbanWorks);
         if (plugin.settings().illegalEnabled) {
             check("/cleanallexploits: preview changes nothing, confirm fixes only the illegal item", this::cleanup);
+            check("/ng scanplayers: an illegal sword in an offline player's save file is found, nothing is changed",
+                this::offlineFile);
         }
         lines.add(failures == 0 ? "Self-test passed (" + lines.size() + " cases)."
             : "Self-test FAILED: " + failures + " case(s). Please report the lines above.");
@@ -289,6 +291,68 @@ final class SelfTest {
             return "the legal mace was changed";
         }
         return null;
+    }
+
+    /**
+     * Builds a fake player save file the way the server writes items (Paper's own item format), with an illegal
+     * sword in hotbar slot 3, a legal enchanted pickaxe and a plain stick, and reads it back like /ng scanplayers.
+     */
+    private String offlineFile() {
+        try {
+            ItemStack sword = ItemStack.of(Material.DIAMOND_SWORD);
+            sword.addUnsafeEnchantment(Enchantment.SHARPNESS, 10);
+            ItemStack pickaxe = ItemStack.of(Material.DIAMOND_PICKAXE);
+            pickaxe.addEnchantment(Enchantment.EFFICIENCY, 5);
+            java.util.Map<String, Object> swordTag = asFileItem(sword, 3);
+            Object dataVersion = io.github.novablaze.novaguard.evidence.Nbt.readCompressed(sword.serializeAsBytes(),
+                1 << 20).get("DataVersion");
+            java.util.Map<String, Object> stick = new java.util.LinkedHashMap<>();
+            stick.put("id", "minecraft:stick");
+            stick.put("count", 1);
+            stick.put("Slot", (byte) 4);
+            java.util.Map<String, Object> root = new java.util.LinkedHashMap<>();
+            root.put("DataVersion", dataVersion);
+            root.put("Inventory", new io.github.novablaze.novaguard.evidence.Nbt.ListTag((byte) 10,
+                new ArrayList<>(List.of(swordTag, stick))));
+            root.put("EnderItems", new io.github.novablaze.novaguard.evidence.Nbt.ListTag((byte) 10,
+                new ArrayList<>(List.of(asFileItem(pickaxe, 0)))));
+            byte[] file = io.github.novablaze.novaguard.evidence.Nbt.writeCompressed(root);
+            List<io.github.novablaze.novaguard.evidence.PlayerFileItems.FileItem> items =
+                io.github.novablaze.novaguard.evidence.PlayerFileItems.items(
+                    io.github.novablaze.novaguard.evidence.Nbt.readCompressed(file, 1 << 20), true);
+            if (items.size() != 2) {
+                return "expected 2 items with data (sword, pickaxe), found " + items.size();
+            }
+            List<io.github.novablaze.novaguard.evidence.PlayerScanner.Finding> found = new ArrayList<>();
+            for (var item : items) {
+                ItemStack loaded = ItemStack.deserializeBytes(item.paperBytes());
+                var finding = io.github.novablaze.novaguard.evidence.PlayerScanner.check(sanitizer, item.where(), loaded);
+                if (finding != null) {
+                    found.add(finding);
+                }
+                if (loaded.getType() == Material.DIAMOND_SWORD && loaded.getEnchantmentLevel(Enchantment.SHARPNESS) != 10) {
+                    return "the checked sword was changed";
+                }
+            }
+            if (found.size() != 1) {
+                return "expected 1 illegal item, found " + found.size() + " " + found;
+            }
+            var finding = found.get(0);
+            if (!finding.where().equals("inventory slot 3 (hotbar)") || !finding.item().startsWith("diamond_sword")) {
+                return "wrong place or item: " + finding;
+            }
+            return null;
+        } catch (java.io.IOException e) {
+            return "could not build the test file: " + e;
+        }
+    }
+
+    private static java.util.Map<String, Object> asFileItem(ItemStack item, int slot) throws java.io.IOException {
+        java.util.Map<String, Object> tag = io.github.novablaze.novaguard.evidence.Nbt.readCompressed(
+            item.serializeAsBytes(), 1 << 20);
+        tag.remove("DataVersion");
+        tag.put("Slot", (byte) slot);
+        return tag;
     }
 
     private ItemStack tagged(ItemStack item) {

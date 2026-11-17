@@ -19,7 +19,7 @@ public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
         List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
-            "dupe", "item", "unban", "review", "cleanall", "selftest");
+            "dupe", "item", "unban", "review", "cleanall", "scanplayers", "selftest");
 
     private final NovaGuardPlugin plugin;
     private final ItemCommands items;
@@ -101,6 +101,11 @@ public final class NovaGuardCommand implements BasicCommand {
                     plugin.cleanCommand().handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
                 }
             }
+            case "scanplayers" -> {
+                if (requireAdmin(sender)) {
+                    plugin.playerScanner().command(sender, args);
+                }
+            }
             case "selftest" -> {
                 if (requireAdmin(sender)) {
                     items.selftest(sender);
@@ -115,7 +120,7 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
                 + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest"
-                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | selftest>",
+                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | scanplayers [player|status|cancel] | selftest>",
                 NamedTextColor.YELLOW);
         }
     }
@@ -144,6 +149,12 @@ public final class NovaGuardCommand implements BasicCommand {
             List<String> names = new ArrayList<>();
             Bukkit.getOnlinePlayers().forEach(p -> names.add(p.getName()));
             return names;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("scanplayers")) {
+            List<String> options = new ArrayList<>(List.of("status", "cancel"));
+            Bukkit.getOnlinePlayers().forEach(p -> options.add(p.getName()));
+            String start = args[1].toLowerCase(Locale.ROOT);
+            return options.stream().filter(o -> o.toLowerCase(Locale.ROOT).startsWith(start)).toList();
         }
         if (args.length == 2 && (args[0].equalsIgnoreCase("approve") || args[0].equalsIgnoreCase("deny"))) {
             List<String> names = new ArrayList<>();
