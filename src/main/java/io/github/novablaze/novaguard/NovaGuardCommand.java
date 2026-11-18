@@ -19,7 +19,7 @@ public final class NovaGuardCommand implements BasicCommand {
 
     private static final List<String> SUBCOMMANDS =
         List.of("alerts", "info", "exempt", "reload", "health", "stats", "alts", "bans", "approve", "deny", "notifytest",
-            "dupe", "item", "unban", "review", "cleanall", "scanplayers", "scanhere", "scanstatus", "selftest");
+            "dupe", "item", "unban", "review", "cleanall", "scanplayers", "scanhere", "scanstatus", "lockdown", "selftest");
 
     private final NovaGuardPlugin plugin;
     private final ItemCommands items;
@@ -119,6 +119,11 @@ public final class NovaGuardCommand implements BasicCommand {
                         : "illegal-items.mode: fix (illegal items are fixed when they are used).", NamedTextColor.AQUA);
                 }
             }
+            case "lockdown" -> {
+                if (requireAdmin(sender)) {
+                    plugin.lockdown().status(sender).forEach(line -> reply(sender, line, NamedTextColor.GOLD));
+                }
+            }
             case "selftest" -> {
                 if (requireAdmin(sender)) {
                     items.selftest(sender);
@@ -133,7 +138,7 @@ public final class NovaGuardCommand implements BasicCommand {
             }
             default -> reply(sender, "Usage: /novaguard <alerts | info <player> | exempt <player> <seconds> | reload"
                 + " | health | stats | alts <player> | bans [cancel|now <player>] | approve|deny <player> | notifytest"
-                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | scanplayers [player|status|cancel] | scanhere [radius] | scanstatus | selftest>",
+                + " | dupe <player>|pardon <player>|rollback|resume | item <id> | unban <player> | review | cleanall | scanplayers [player|status|cancel] | scanhere [radius] | scanstatus | lockdown | selftest>",
                 NamedTextColor.YELLOW);
         }
     }

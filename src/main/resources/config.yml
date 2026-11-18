@@ -409,3 +409,30 @@ evidence:
     # If CoreProtect is installed: who placed and who opened each container with illegal items.
     enabled: true
     days: 30
+
+lockdown:
+  # Season 5 protection against stolen operator rights, command-block backdoors and creative abuse.
+  # The root of trust is this file: nobody can change it from inside the game, not even an operator.
+  enabled: true
+  # The ONLY accounts allowed to be operator, use creative, place command blocks and run owner-only commands.
+  # Use UUIDs (the permanent account ID), never names: names can be faked. Find yours in usercache.json or with
+  # /ng lockdown while you are online. Empty list = only the console is trusted.
+  # Example: owners: ["069a79f4-44e9-4726-a5be-fca90e38aaf5"]
+  owners: []
+  # Remove operator from every account that is not in 'owners' (checked on join and every 5 seconds).
+  op-guard: true
+  # Only owners may switch to creative; anyone else in creative is put back into survival.
+  creative-guard: true
+  # What command blocks (and command-block minecarts) may run:
+  #   deny-all       - nothing (recommended for a survival server; every attempt is logged with coordinates)
+  #   deny-dangerous - everything except the commands in 'command-block-dangerous'
+  #   allow          - everything (no protection)
+  command-blocks: deny-all
+  command-block-dangerous: [op, deop, whitelist, ban, ban-ip, pardon, pardon-ip, kick, give, item, enchant,
+    attribute, effect, gamemode, summon, setblock, fill, clone, data, loot, tp, teleport, execute, function,
+    schedule, forceload, datapack, gamerule, lp, luckperms, pex, permissions, perm, perms, plugman, plugmanx]
+  # Commands only owners (and the console) may run, including through /execute ... run.
+  owner-only-commands: [op, deop, whitelist, lp, luckperms, lpb, lpv, pex, permissionsex, perm, perms, permission,
+    permissions, manuadd, plugman, plugmanx, reload, rl, datapack, function, schedule, forceload, stop, restart]
+  # Warn when an account that is not an owner holds operator-level permissions from a permissions plugin.
+  permission-watch: true

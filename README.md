@@ -284,3 +284,29 @@ Paper 26.3 server with the plugin as a smoke test, and publishes a release. Loca
 (needs Java 25).
 
 Design and research: `docs/superpowers/specs/2026-10-30-novaguard-anticheat-design.md`.
+
+
+## Season 5 lockdown (1.9.0): stolen operator, command-block backdoors, creative abuse
+
+What happened in season 4: the server ran in offline mode without a login plugin, so attackers joined under
+other names, got operator, gave themselves items, and planted command blocks that whitelisted their alts again
+after every ban. The lockdown closes each of those doors:
+
+| Lock | What it does |
+|---|---|
+| Owners list | `lockdown.owners` in config.yml: the only UUIDs that may be operator, use creative, place command blocks or run owner-only commands. No in-game command can change it. |
+| Op guard | Anyone else who is operator loses it on join and within 5 seconds. Logged with name, UUID and IP. |
+| Owner-only commands | `op`, `whitelist`, `lp`, `datapack`, `function`, `forceload`... are refused for everyone else, also hidden inside `/execute ... run` and behind plugin aliases. |
+| Command-block firewall | `command-blocks: deny-all` (default): command blocks and command minecarts run nothing. Every attempt is logged with coordinates and the command written inside, so a planted backdoor is found the first time it fires. |
+| Creative guard | Non-owners cannot enter creative; anyone found in creative is put in survival. |
+| Permission watch | A non-owner with operator-level permissions from a permissions plugin (a LuckPerms backdoor) is reported. |
+| Login check | At start, says how safe your login setup is. Offline mode without a login plugin or proxy is reported as the critical hole it is. |
+
+Everything goes to `plugins/NovaGuard/security.log`, the console, Discord/email if set up, and to online owners
+with a `[teleport]` button. `/ng lockdown` shows the status and your own UUID.
+
+Setup: start the server once, join, run `/ng lockdown`, copy "Your UUID" into `lockdown.owners`, `/ng reload`.
+
+Honest limit: in offline mode a name decides the UUID, so someone who joins with an owner's name IS that owner to
+the server. The lockdown cannot fix that; `online-mode=true` (with Floodgate for Bedrock), a login plugin, or a
+correctly firewalled Velocity proxy can.

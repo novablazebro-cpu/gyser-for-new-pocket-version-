@@ -28,6 +28,7 @@ public final class ReportFile {
 
     private final Path file;
     private final Path old;
+    private final String name;
     private final Consumer<String> warn;
     private final ExecutorService writer = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "NovaGuard-evidence-report");
@@ -36,8 +37,15 @@ public final class ReportFile {
     });
 
     public ReportFile(Path folder, Consumer<String> warn) {
-        this.file = folder.resolve(NAME);
-        this.old = folder.resolve(NAME.replace(".txt", "-old.txt"));
+        this(folder, NAME, warn);
+    }
+
+    /** A report with another file name (security.log uses the same safe writer). */
+    public ReportFile(Path folder, String name, Consumer<String> warn) {
+        this.name = name;
+        this.file = folder.resolve(name);
+        int dot = name.lastIndexOf('.');
+        this.old = folder.resolve(dot < 0 ? name + "-old" : name.substring(0, dot) + "-old" + name.substring(dot));
         this.warn = warn;
     }
 
@@ -56,7 +64,7 @@ public final class ReportFile {
                 Files.createDirectories(file.getParent());
                 // Never follow a link someone placed here: the report must not be written somewhere else.
                 if (Files.isSymbolicLink(file)) {
-                    warn.accept("Not writing " + NAME + ": it is a symbolic link.");
+                    warn.accept("Not writing " + name + ": it is a symbolic link.");
                     return;
                 }
                 if (Files.exists(file, LinkOption.NOFOLLOW_LINKS) && Files.size(file) > MAX_BYTES) {
@@ -70,7 +78,7 @@ public final class ReportFile {
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                warn.accept("Could not write " + NAME + ": " + e.getMessage());
+                warn.accept("Could not write " + name + ": " + e.getMessage());
             }
         });
     }

@@ -20,7 +20,7 @@ mkdir -p "$WORK/plugins"
 cp "$PLUGIN_JAR" "$WORK/plugins/NovaGuard.jar"
 # Test server only: accept the EULA and run offline like the real server.
 echo "eula=true" > "$WORK/eula.txt"
-printf "online-mode=false\nlevel-type=minecraft\\:flat\ngenerate-structures=false\nspawn-protection=0\n" > "$WORK/server.properties"
+printf "online-mode=false\nenable-command-block=true\nlevel-type=minecraft\\:flat\ngenerate-structures=false\nspawn-protection=0\n" > "$WORK/server.properties"
 
 cd "$WORK"
 mkfifo console
@@ -52,7 +52,13 @@ echo "cleanallexploits" >&3
 echo "cleanallexploits preview" >&3
 echo "novaguard scanplayers" >&3
 echo "novaguard scanstatus" >&3
-sleep 5
+# Lockdown: a planted backdoor command block and a stolen operator must both be stopped.
+echo "forceload add 0 0" >&3
+echo 'setblock 1 -60 1 minecraft:repeating_command_block{Command:"whitelist add evilalt",auto:1b}' >&3
+echo "op EvilOp" >&3
+sleep 8
+echo "novaguard lockdown" >&3
+sleep 2
 echo "stop" >&3
 wait "$SERVER_PID" || true
 exec 3>&-
@@ -71,6 +77,13 @@ grep -q "Nobody is on the suspect list" server.log || { echo "ERROR: /novaguard 
 grep -q "No item with an ID starting with" server.log || { echo "ERROR: /novaguard item did not answer"; FAIL=1; }
 grep -q "Cleanup preview finished" server.log || { echo "ERROR: /cleanallexploits preview did not finish"; FAIL=1; }
 grep -q "Chunk scan: on" server.log || { echo "ERROR: /novaguard scanstatus did not answer"; FAIL=1; }
+grep -q "COMMAND BLOCK BLOCKED" server.log || { echo "ERROR: the lockdown did not block the command block"; FAIL=1; }
+grep -q "evilalt" whitelist.json && { echo "ERROR: the command block managed to whitelist evilalt"; FAIL=1; }
+grep -q "OFFLINE MODE WITHOUT ANY LOGIN" server.log || { echo "ERROR: the offline-mode warning is missing"; FAIL=1; }
+grep -q "Lockdown: ON" server.log || { echo "ERROR: /novaguard lockdown did not answer"; FAIL=1; }
+if grep -q "Made EvilOp a server operator" server.log; then
+  grep -q "OPERATOR REMOVED | EvilOp" server.log || { echo "ERROR: the op guard did not remove EvilOp"; FAIL=1; }
+fi
 grep -q "Player scan finished" server.log || { echo "ERROR: /novaguard scanplayers did not finish"; FAIL=1; }
 grep -q "TEST MODE" server.log || { echo "ERROR: the test-mode reminder is missing"; FAIL=1; }
 # The self-test fixes illegal items and undoes dupes on test items inside the real server.

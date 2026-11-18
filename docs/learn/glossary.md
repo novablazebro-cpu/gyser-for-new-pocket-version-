@@ -63,3 +63,6 @@
 | Backdoor | Hidden access an attacker leaves behind so they can get back in after being kicked out. | The planted command blocks that re-whitelist alt accounts |
 | Incident response | The fixed order professionals use after a break-in: contain, remove the attacker, close the hole, recover, learn. | Cleaning up the operator exploit |
 | Least privilege | Give each person only the power they need, nothing more. | Why almost nobody should have operator |
+| Root of trust | The one thing everything else trusts, so it must be impossible for an attacker to change. | `lockdown.owners` lives in config.yml, which no in-game command can edit |
+| Defense in depth | Several independent locks, so one broken lock is not a break-in. | Lockdown: op guard + owner-only commands + command-block firewall + creative guard |
+| Allowlist vs denylist | An allowlist names the only things allowed (safer); a denylist names forbidden things and misses new tricks. | `owners` is an allowlist; `command-block-dangerous` is a denylist, which is why `deny-all` is the default |

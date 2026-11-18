@@ -59,6 +59,7 @@ public final class NovaGuardPlugin extends JavaPlugin {
     private io.github.novablaze.novaguard.evidence.ChunkScanner chunkScanner;
     private io.github.novablaze.novaguard.evidence.ReportFile evidenceReport;
     private FlagRateStats flagStats;
+    private io.github.novablaze.novaguard.security.Lockdown lockdown;
     private final MobTracker mobs = new MobTracker();
     private DupeListener dupeListener;
     private BukkitTask fingerprintTask;
@@ -105,10 +106,21 @@ public final class NovaGuardPlugin extends JavaPlugin {
         pluginManager.registerEvents(bans, this);
         pluginManager.registerEvents(cleaner, this);
         pluginManager.registerEvents(chunkScanner, this);
+        lockdown = new io.github.novablaze.novaguard.security.Lockdown(this);
+        pluginManager.registerEvents(lockdown, this);
         chunkScanner.start();
 
         // After every plugin is enabled (login plugins may load after NovaGuard).
         Bukkit.getScheduler().runTask(this, () -> safety.run("login-plugins", login::detect));
+        // Once, not timed: reading spigot.yml and paper-global.yml takes a few ms and is not lag.
+        Bukkit.getScheduler().runTask(this, () -> {
+            try {
+                lockdown.start();
+            } catch (RuntimeException e) {
+                getLogger().log(java.util.logging.Level.SEVERE, "Lockdown start check failed (the guards still run):", e);
+            }
+        });
+        Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("lockdown", lockdown), 100L, 100L);
         Bukkit.getScheduler().runTaskTimer(this, lag, 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, () -> safety.run("mob-tracker", mobs), 1L, 1L);
         Bukkit.getScheduler().runTaskTimer(this, cleaner, 1L, 1L);
@@ -144,6 +156,9 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (lockdown != null) {
+            lockdown.shutdown();
+        }
         if (playerScanner != null) {
             playerScanner.shutdown();
         }
@@ -311,6 +326,10 @@ public final class NovaGuardPlugin extends JavaPlugin {
 
     public io.github.novablaze.novaguard.evidence.IllegalItemInspector inspector() {
         return inspector;
+    }
+
+    public io.github.novablaze.novaguard.security.Lockdown lockdown() {
+        return lockdown;
     }
 
     public io.github.novablaze.novaguard.evidence.ChunkScanner chunkScanner() {

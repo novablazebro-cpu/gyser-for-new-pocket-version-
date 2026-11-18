@@ -153,6 +153,15 @@ public final class Settings {
     public final int chunkScanNearestRadius;
     public final boolean coreProtectEvidence;
     public final int coreProtectDays;
+    public final boolean lockdownEnabled;
+    public final java.util.Set<java.util.UUID> lockdownOwners;
+    public final boolean lockdownOpGuard;
+    public final boolean lockdownCreativeGuard;
+    /** "deny-all", "deny-dangerous" or "allow". */
+    public final String lockdownCommandBlocks;
+    public final java.util.Set<String> lockdownCommandBlockDangerous;
+    public final java.util.Set<String> lockdownOwnerOnly;
+    public final boolean lockdownPermissionWatch;
     public final boolean illegalRemoveUnbreakable;
     public final boolean illegalRemoveAttributes;
     public final boolean illegalSkipPluginItems;
@@ -364,6 +373,28 @@ public final class Settings {
         chunkScanNearestRadius = Math.max(0, c.getInt("evidence.chunk-scan.nearest-player-radius", 128));
         coreProtectEvidence = c.getBoolean("evidence.coreprotect.enabled", true);
         coreProtectDays = Math.max(1, Math.min(3650, c.getInt("evidence.coreprotect.days", 30)));
+        lockdownEnabled = c.getBoolean("lockdown.enabled", true);
+        java.util.Set<java.util.UUID> owners = new java.util.HashSet<>();
+        for (String entry : c.getStringList("lockdown.owners")) {
+            try {
+                owners.add(java.util.UUID.fromString(entry.trim()));
+            } catch (IllegalArgumentException e) {
+                logger.warning("lockdown.owners: '" + entry + "' is not a UUID (names are not accepted, they can be"
+                    + " faked). Ignored.");
+            }
+        }
+        lockdownOwners = java.util.Set.copyOf(owners);
+        lockdownOpGuard = c.getBoolean("lockdown.op-guard", true);
+        lockdownCreativeGuard = c.getBoolean("lockdown.creative-guard", true);
+        String policy = c.getString("lockdown.command-blocks", "deny-all").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!policy.equals("deny-all") && !policy.equals("deny-dangerous") && !policy.equals("allow")) {
+            logger.warning("lockdown.command-blocks: '" + policy + "' is unknown, using deny-all.");
+            policy = "deny-all";
+        }
+        lockdownCommandBlocks = policy;
+        lockdownCommandBlockDangerous = lowerSet(c.getStringList("lockdown.command-block-dangerous"));
+        lockdownOwnerOnly = lowerSet(c.getStringList("lockdown.owner-only-commands"));
+        lockdownPermissionWatch = c.getBoolean("lockdown.permission-watch", true);
         illegalRemoveUnbreakable = c.getBoolean("illegal-items.remove-unbreakable", true);
         illegalRemoveAttributes = c.getBoolean("illegal-items.remove-custom-attributes", false);
         illegalSkipPluginItems = c.getBoolean("illegal-items.skip-plugin-items", true);
@@ -375,6 +406,20 @@ public final class Settings {
         if (unused == null) {
             logger.warning("config.yml has no 'checks' section, using defaults.");
         }
+    }
+
+    private static java.util.Set<String> lowerSet(List<String> values) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String value : values) {
+            String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+            if (v.startsWith("/")) {
+                v = v.substring(1);
+            }
+            if (!v.isEmpty()) {
+                out.add(v);
+            }
+        }
+        return java.util.Set.copyOf(out);
     }
 
     public CheckSettings check(CheckType type) {
