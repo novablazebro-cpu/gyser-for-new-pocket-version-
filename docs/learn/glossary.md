@@ -58,3 +58,8 @@
 | Reflection | Calling another program's code by looking up its methods by name while running, so it is not needed to build. | `CoreProtectEvidence` uses CoreProtect without depending on it |
 | Deduplication | Remembering what was already reported so the same thing is not reported again. | The `reported` map in `ChunkScanner` |
 | Report-only mode | Detect and record, but never act, so evidence stays in place. | `illegal-items.mode: report` |
+| Offline mode (`online-mode=false`) | The server does not ask Mojang "is this really that player?", so anyone can join under any name, including an admin's. | Why the exploiters got operator on Deathcore SMP |
+| UUID | A player's permanent ID number. In online mode it comes from Mojang and never changes; in offline mode it is made from the name, so it can be faked. | Bans, `ops.json`, `whitelist.json` |
+| Backdoor | Hidden access an attacker leaves behind so they can get back in after being kicked out. | The planted command blocks that re-whitelist alt accounts |
+| Incident response | The fixed order professionals use after a break-in: contain, remove the attacker, close the hole, recover, learn. | Cleaning up the operator exploit |
+| Least privilege | Give each person only the power they need, nothing more. | Why almost nobody should have operator |
